@@ -1,0 +1,19 @@
+services:
+  officesuite-web:
+    build: .
+    image: officesuite-web:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8080}:${PORT:-8080}"
+    environment:
+      # DATABASE_URL/WORKSPACES_DIR are intentionally not sourced from .env here: their defaults
+      # (baked into the image, see Dockerfile) already point inside the /data volume below. The
+      # DATABASE_URL/WORKSPACES_DIR values in .env are for local `cargo run` and use host-relative
+      # paths that don't apply inside the container.
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env}
+      PORT: ${PORT:-8080}
+    volumes:
+      - officesuite-data:/data
+
+volumes:
+  officesuite-data:

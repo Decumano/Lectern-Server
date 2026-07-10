@@ -28,6 +28,28 @@ docker build -t officesuite-web .
 docker run -p 8080:8080 -v officesuite-data:/data officesuite-web
 ```
 
+### Running with docker-compose
+
+```
+cp .env.example .env    # set SESSION_SECRET at minimum
+docker compose up -d --build
+```
+
+`docker-compose.yml` reads its settings from `.env` (via `${VAR}` substitution) so the container
+gets the same configuration as `cargo run` would:
+
+| Variable         | Default                            | Notes                                      |
+|-------------------|-------------------------------------|---------------------------------------------|
+| `SESSION_SECRET`  | *(required, no default)*            | Compose refuses to start without this set   |
+| `HOST_PORT`       | `8080`                              | Host-side port mapping                      |
+| `PORT`            | `8080`                              | Port the server listens on, both on the host and inside the container |
+| `TAG`             | `latest`                            | Tag applied to the built image              |
+
+`DATABASE_URL` and `WORKSPACES_DIR` aren't read from `.env` for the compose service — their
+image defaults (set in the `Dockerfile`) already point at `/data`, which is backed by the
+`officesuite-data` named volume, so data persists across `docker compose down`/`up` cycles.
+The `.env` values for those two are only used by local `cargo run`.
+
 ## API
 
 | Method | Path                  | Description                              |
