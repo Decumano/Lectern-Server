@@ -10215,7 +10215,7 @@ function buildSheetExportHtml(file)
 // placeholder is rendered to a static <svg> here (via mermaid.render, which
 // works off-DOM) and the markup is inlined directly - keeping the exported
 // HTML/PDF fully self-contained and immune to script execution quirks in
-// whatever views it later (a browser, or the print-preview iframe).
+// whatever renders it later (a browser, or the server-side PDF renderer).
 async function inlineMermaidSvgs(html)
 {
   if (typeof mermaid === 'undefined')
@@ -10261,59 +10261,6 @@ async function buildGraphExportHtml(file)
   return wrapExportHtml(file.name, '<h1>' + escHtml(file.name) + '</h1>\n' + bodyHtml);
 }
 
-// Shows the HTML in a genuinely on-screen preview (rather than a hidden/
-// off-screen iframe) before printing. An invisible or off-canvas iframe is
-// the usual trick for "print this content", but some embedded webviews
-// (e.g. Tauri's WebView2 on Windows) appear to rasterize whatever's at the
-// iframe's on-page position for "Print to PDF" rather than the iframe's own
-// internal layout - which is empty when the iframe sits off-screen, so the
-// resulting PDF comes out blank. Keeping the content visibly on-screen
-// sidesteps that entirely, and lets the user see what they're printing.
-function printHtmlContent(html)
-{
-  var overlay = document.getElementById('print-preview-overlay'),
-      iframe = document.getElementById('print-preview-frame');
-
-  if (!overlay || !iframe)
-    return;
-
-  iframe.srcdoc = html;
-  overlay.classList.add('open');
-}
-
-function printPreviewNow()
-{
-  var iframe = document.getElementById('print-preview-frame');
-
-  if (!iframe || !iframe.contentWindow)
-    return;
-
-  iframe.contentWindow.focus();
-  iframe.contentWindow.print();
-}
-
-function closePrintPreview()
-{
-  var overlay = document.getElementById('print-preview-overlay'),
-      iframe = document.getElementById('print-preview-frame');
-
-  if (overlay)
-    overlay.classList.remove('open');
-
-  if (iframe)
-    iframe.srcdoc = '';
-}
-
-document.getElementById('print-preview-overlay').addEventListener
-(
-  'click',
-  function(e)
-  {
-    if (e.target === document.getElementById('print-preview-overlay'))
-      closePrintPreview();
-  }
-);
-
 async function exportCurrentAs(format)
 {
   if (!currentFileId)
@@ -10336,7 +10283,18 @@ async function exportCurrentAs(format)
 
   if (format === 'pdf')
   {
-    printHtmlContent(html);
+    var pdfName = f.name.replace(/\s+/g,'_') + '.pdf';
+
+    try
+    {
+      await Platform.exportPdf(pdfName, html);
+    }
+    catch(e)
+    {
+      console.warn('PDF export error', e);
+      alert('Could not export PDF.');
+    }
+
     return;
   }
 

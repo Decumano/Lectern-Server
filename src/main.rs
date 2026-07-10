@@ -1,9 +1,11 @@
 mod auth;
 mod db;
 mod error;
+mod export;
 mod state;
 mod workspace;
 
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, post};
 use axum::Router;
 use state::AppState;
@@ -53,7 +55,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/workspace/folder", post(workspace::create_work_folder))
         .route("/workspace/entry", delete(workspace::delete_work_entry))
-        .route("/workspace/move", post(workspace::move_work_entry));
+        .route("/workspace/move", post(workspace::move_work_entry))
+        .route(
+            "/export/pdf",
+            post(export::export_pdf).layer(DefaultBodyLimit::max(50 * 1024 * 1024)),
+        );
 
     let static_files = ServeDir::new("web").fallback(ServeFile::new("web/index.html"));
 

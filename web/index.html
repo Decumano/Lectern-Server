@@ -96,7 +96,7 @@
             </button>
             <div id="export-as-submenu" class="export-as-submenu">
               <button class="file-menu-item" onclick="handleFileMenuExportAs('html')">HTML (.html)</button>
-              <button class="file-menu-item" onclick="handleFileMenuExportAs('pdf')">PDF (preview &amp; print)</button>
+              <button class="file-menu-item" onclick="handleFileMenuExportAs('pdf')">PDF (.pdf)</button>
             </div>
             <div class="file-menu-divider"></div>
             <button class="file-menu-item" onclick="handleFileMenuImport()">Import</button>
@@ -679,19 +679,6 @@
       <div class="modal-actions">
         <button class="btn-cancel" onclick="closeFileLinkModal()">Cancel</button>
       </div>
-    </div>
-  </div>
-
-  <!-- PRINT PREVIEW (export as PDF) -->
-  <div class="modal-overlay" id="print-preview-overlay">
-    <div class="print-preview-panel">
-      <div class="print-preview-toolbar">
-        <span class="print-preview-title">Print Preview</span>
-        <div style="flex:1;"></div>
-        <button class="btn-create" onclick="printPreviewNow()">Print / Save as PDF</button>
-        <button class="btn-cancel" onclick="closePrintPreview()">Close</button>
-      </div>
-      <iframe id="print-preview-frame" class="print-preview-frame"></iframe>
     </div>
   </div>
 

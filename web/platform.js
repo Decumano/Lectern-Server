@@ -147,24 +147,45 @@ var Platform = (function () {
     });
   }
 
+  // Triggers a standard browser download of a Blob under the given name.
+  function downloadBlob(name, blob) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   // Saves a one-off exported file. On Tauri this opens a native save dialog;
   // elsewhere it triggers a standard browser download of the same content.
   function saveFile(name, content) {
     if (tauri) return tauri.invoke('save_file', { name: name, content: content });
     try {
-      var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      downloadBlob(name, new Blob([content], { type: 'text/plain;charset=utf-8' }));
       return Promise.resolve(true);
     } catch (e) {
       return Promise.reject(e);
     }
+  }
+
+  // Renders `html` to a PDF server-side (headless Chromium, headers/footers
+  // disabled - see src/export.rs) and downloads the result. Not available on
+  // Tauri, which renders/prints PDFs locally via the print-preview flow instead.
+  function exportPdf(name, html) {
+    if (tauri) return Promise.reject(new Error('exportPdf is web-only'));
+    return api('/export/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/html;charset=utf-8' },
+      body: html
+    }).then(function (res) {
+      return res.blob();
+    }).then(function (blob) {
+      downloadBlob(name, blob);
+      return true;
+    });
   }
 
   return {
@@ -178,6 +199,7 @@ var Platform = (function () {
     moveWorkEntry: moveWorkEntry,
     defaultFile: defaultFile,
     saveFile: saveFile,
+    exportPdf: exportPdf,
     currentUser: currentUser,
     register: register,
     login: login,
