@@ -7024,7 +7024,7 @@ async function buildNotebookExportHtml(file)
         ctx.fillText(line, t.x, y);
     });
 
-    imagesHtml += '<img src="' + canvas.toDataURL('image/png') + '" style="display:block;max-width:100%;margin:0 auto 24px;border:1px solid #ddd;">\n';
+    imagesHtml += '<img class="notebook-page" src="' + canvas.toDataURL('image/png') + '" style="display:block;max-width:100%;margin:0 auto 24px;border:1px solid #ddd;">\n';
   }
 
   return wrapExportHtml(file.name, '<h1>' + escHtml(file.name) + '</h1>\n' + imagesHtml);
@@ -10129,6 +10129,7 @@ function wrapExportHtml(title, bodyHtml)
           '<meta charset="UTF-8">\n'+
           '<title>' + escHtml(title) + '</title>\n'+
           '<style>\n'+
+          '@page{size:A4;margin:2cm;}\n'+
           'body{font-family:Georgia,\'Times New Roman\',serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1a1a1a;line-height:1.6;}\n'+
           'h1,h2,h3,h4,h5,h6{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}\n'+
           'table{border-collapse:collapse;width:100%;font-family:Consolas,monospace;font-size:13px;}\n'+
@@ -10138,6 +10139,13 @@ function wrapExportHtml(title, bodyHtml)
           'blockquote{border-left:3px solid #ccc;margin-left:0;padding-left:16px;color:#555;}\n'+
           '.mermaid-diagram{text-align:center;margin:1.5em 0;}\n'+
           '.mermaid-diagram svg{max-width:100%;height:auto;}\n'+
+          'table,tr,blockquote,pre,.mermaid-diagram,.notebook-page{break-inside:avoid;}\n'+
+          'h1,h2,h3,h4,h5,h6{break-after:avoid;}\n'+
+          '.notebook-page{break-after:page;}\n'+
+          '.notebook-page:last-child{break-after:auto;}\n'+
+          '@media print{\n'+
+          'body{max-width:none;margin:0;padding:0;}\n'+
+          '}\n'+
           '</style>\n'+
           '</head>\n'+
           '<body>\n' + bodyHtml + '\n</body>\n'+
