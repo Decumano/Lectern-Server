@@ -40,7 +40,8 @@ gets the same configuration as `cargo run` would:
 
 | Variable         | Default                            | Notes                                      |
 |-------------------|-------------------------------------|---------------------------------------------|
-| `SESSION_SECRET`  | *(required, no default)*            | Compose refuses to start without this set   |
+| `SESSION_SECRET`  | *(required, no default)*            | Signs session cookies; at least 64 chars. Compose refuses to start without this set |
+| `COOKIE_SECURE`   | `false`                             | Set `true` once behind HTTPS so session cookies carry the Secure flag |
 | `HOST_PORT`       | `8080`                              | Host-side port mapping                      |
 | `PORT`            | `8080`                              | Port the server listens on, both on the host and inside the container |
 | `TAG`             | `latest`                            | Tag applied to the built image              |
@@ -64,6 +65,22 @@ The `.env` values for those two are only used by local `cargo run`.
 | POST   | `/api/workspace/folder`| Create a folder (`{ relPath }`)           |
 | DELETE | `/api/workspace/entry` | Delete a file/folder (`?path=&isDir=`)    |
 | POST   | `/api/workspace/move`  | Move/rename (`{ from, to }`)              |
+| POST   | `/api/shares`          | Share a file/folder with another account (`{ relPath, isDir, email, permission }`, permission: `view`/`comment`/`edit`) |
+| GET    | `/api/shares`          | List who an entry is shared with (`?path=`) |
+| DELETE | `/api/shares/:id`      | Revoke a share (owner) or leave it (grantee) |
+| GET    | `/api/shared`          | Entries shared with the current user      |
+| GET    | `/api/shared/list`     | File tree of a folder share (`?share=`)   |
+| GET    | `/api/shared/file`     | Read a shared file (`?share=&path=`)      |
+| PUT    | `/api/shared/file`     | Write a shared file (edit permission; existing files only) |
+| POST   | `/api/links`           | Create a share link (`{ relPath, isDir, permission }`); returns the token |
+| GET    | `/api/links`           | List an entry's share links (`?path=`)    |
+| DELETE | `/api/links/:id`       | Revoke a share link (owner only)          |
+| GET    | `/api/link/:token`     | Link metadata — **no login needed**, the token is the authorization |
+| GET    | `/api/link/:token/list`| File tree of a folder link                |
+| GET/PUT| `/api/link/:token/file`| Read / write through a link (`?path=`; write needs an edit link) |
+| GET    | `/api/comments`        | Comments on a Document (`?path=` own, `?share=&subPath=` shared, or `?link=&subPath=` via link — the link form needs no login) |
+| POST   | `/api/comments`        | Add a comment (comment/edit permission; Documents `.mdp` only) |
+| DELETE | `/api/comments/:id`    | Delete a comment (author or file owner)   |
 
 Every workspace endpoint scopes reads/writes to `data/workspaces/<user_id>/`, derived from the
 session — never from client input — and rejects any relative path that tries to escape that
@@ -71,4 +88,23 @@ directory (no `..`, no absolute paths).
 
 ## Environment variables
 
-See `.env.example`: `DATABASE_URL`, `SESSION_SECRET`, `PORT`, `WORKSPACES_DIR`.
+See `.env.example`: `DATABASE_URL`, `SESSION_SECRET`, `PORT`, `WORKSPACES_DIR`, `COOKIE_SECURE`.
+
+## Desktop app downloads
+
+The login gate links to `/download.html`, a static page that lists the installers and
+portable builds attached to the latest GitHub Release of
+[Decumano/OfficeSuite](https://github.com/Decumano/OfficeSuite/releases) (fetched
+client-side from the GitHub API, with a fallback link to the releases page). Releases
+are produced by that repo's `release.yml` workflow — push a `v*` tag there and the
+downloads show up here automatically; nothing on this server needs redeploying.
+
+## Security notes
+
+- `SESSION_SECRET` (≥ 64 chars) signs session cookies; without it the server runs with
+  unsigned cookies and logs a warning (fine for local dev only).
+- Login failures and registrations are rate-limited per client IP (10 failed logins / 15 min,
+  20 registrations / hour). Successful logins are never counted, so many users behind one
+  proxy IP won't lock each other out.
+- Desktop clients authenticate with `Authorization: Bearer <apiToken>` (returned by
+  login/register); browsers use the session cookie.

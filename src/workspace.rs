@@ -6,14 +6,15 @@
 // validated with `safe_rel_path` to make sure it can't escape that root.
 
 use axum::extract::{Query, State};
-use axum::{http::StatusCode, Json};
+use axum::{http::HeaderMap, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use tower_sessions::Session;
 
-use crate::auth::current_user_id;
+use crate::auth::current_user_id_with_headers;
 use crate::error::AppError;
 use crate::state::AppState;
 
@@ -25,10 +26,32 @@ pub struct FsEntry {
     #[serde(rename = "isDir")]
     is_dir: bool,
     modified: u64,
+    /// sha256 hex digest of the file's bytes, empty string for directories.
+    /// Lets sync clients tell "did this change on the server" from one
+    /// listing call without downloading every file's content.
+    hash: String,
     children: Vec<FsEntry>,
 }
 
-const WORK_FILE_EXTENSIONS: [&str; 7] = ["mdp", "mds", "mdg", "mdn", "mdl", "mdc", "mde"];
+fn hash_file(path: &Path) -> String {
+    match fs::read(path) {
+        Ok(bytes) => {
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            format!("{:x}", hasher.finalize())
+        }
+        Err(_) => String::new(),
+    }
+}
+
+pub const WORK_FILE_EXTENSIONS: [&str; 8] = ["mdp", "mds", "mdg", "mdn", "mdl", "mdc", "mde", "mdb"];
+
+/// Root-level sidecar files that sync clients need to see in listings (with a
+/// hash) even though they aren't work files. Currently just the user's custom
+/// document templates, so templates follow their account across devices. The
+/// web UI filters these out of its file tree; the desktop tree never lists
+/// them (its walker only shows work extensions).
+const SYNC_SIDECAR_FILES: [&str; 1] = ["_lktpl.json"];
 
 fn modified_ms(metadata: &fs::Metadata) -> u64 {
     metadata
@@ -41,7 +64,7 @@ fn modified_ms(metadata: &fs::Metadata) -> u64 {
 
 /// Rejects absolute paths, drive-letter prefixes, and `..` components so a
 /// request can never resolve to a path outside the caller's workspace root.
-fn safe_rel_path(rel_path: &str) -> Result<PathBuf, AppError> {
+pub fn safe_rel_path(rel_path: &str) -> Result<PathBuf, AppError> {
     let mut buf = PathBuf::new();
     for component in Path::new(rel_path).components() {
         match component {
@@ -56,14 +79,18 @@ fn safe_rel_path(rel_path: &str) -> Result<PathBuf, AppError> {
     Ok(buf)
 }
 
-async fn user_root(state: &AppState, session: &Session) -> Result<PathBuf, AppError> {
-    let user_id = current_user_id(session).await?;
+async fn user_root(
+    state: &AppState,
+    session: &Session,
+    headers: &HeaderMap,
+) -> Result<PathBuf, AppError> {
+    let user_id = current_user_id_with_headers(state, session, headers).await?;
     let root = state.workspaces_dir.join(user_id);
     fs::create_dir_all(&root)?;
     Ok(root)
 }
 
-fn walk_work_dir(dir: &Path, rel_prefix: &str) -> Result<Vec<FsEntry>, AppError> {
+pub fn walk_work_dir(dir: &Path, rel_prefix: &str) -> Result<Vec<FsEntry>, AppError> {
     let mut entries = Vec::new();
 
     for entry in fs::read_dir(dir)? {
@@ -85,6 +112,7 @@ fn walk_work_dir(dir: &Path, rel_prefix: &str) -> Result<Vec<FsEntry>, AppError>
                 rel_path,
                 is_dir: true,
                 modified: 0,
+                hash: String::new(),
             });
         } else {
             let ext = Path::new(&name)
@@ -93,7 +121,9 @@ fn walk_work_dir(dir: &Path, rel_prefix: &str) -> Result<Vec<FsEntry>, AppError>
                 .map(|e| e.to_lowercase())
                 .unwrap_or_default();
 
-            if !WORK_FILE_EXTENSIONS.contains(&ext.as_str()) {
+            let is_root_sidecar =
+                rel_prefix.is_empty() && SYNC_SIDECAR_FILES.contains(&name.as_str());
+            if !WORK_FILE_EXTENSIONS.contains(&ext.as_str()) && !is_root_sidecar {
                 continue;
             }
 
@@ -102,6 +132,7 @@ fn walk_work_dir(dir: &Path, rel_prefix: &str) -> Result<Vec<FsEntry>, AppError>
                 rel_path,
                 is_dir: false,
                 modified: modified_ms(&metadata),
+                hash: hash_file(&path),
                 children: Vec::new(),
             });
         }
@@ -119,8 +150,9 @@ fn walk_work_dir(dir: &Path, rel_prefix: &str) -> Result<Vec<FsEntry>, AppError>
 pub async fn list_work_folder(
     State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
 ) -> Result<Json<Vec<FsEntry>>, AppError> {
-    let root = user_root(&state, &session).await?;
+    let root = user_root(&state, &session, &headers).await?;
     Ok(Json(walk_work_dir(&root, "")?))
 }
 
@@ -132,9 +164,10 @@ pub struct PathQuery {
 pub async fn read_work_file(
     State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
     Query(q): Query<PathQuery>,
 ) -> Result<String, AppError> {
-    let root = user_root(&state, &session).await?;
+    let root = user_root(&state, &session, &headers).await?;
     let rel = safe_rel_path(&q.path)?;
     fs::read_to_string(root.join(rel)).map_err(|e| e.into())
 }
@@ -142,10 +175,11 @@ pub async fn read_work_file(
 pub async fn write_work_file(
     State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
     Query(q): Query<PathQuery>,
     content: String,
 ) -> Result<StatusCode, AppError> {
-    let root = user_root(&state, &session).await?;
+    let root = user_root(&state, &session, &headers).await?;
     let rel = safe_rel_path(&q.path)?;
     let path = root.join(rel);
 
@@ -166,9 +200,10 @@ pub struct RelPathBody {
 pub async fn create_work_folder(
     State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
     Json(body): Json<RelPathBody>,
 ) -> Result<StatusCode, AppError> {
-    let root = user_root(&state, &session).await?;
+    let root = user_root(&state, &session, &headers).await?;
     let rel = safe_rel_path(&body.rel_path)?;
     fs::create_dir_all(root.join(rel))?;
     Ok(StatusCode::OK)
@@ -184,9 +219,10 @@ pub struct DeleteQuery {
 pub async fn delete_work_entry(
     State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
     Query(q): Query<DeleteQuery>,
 ) -> Result<StatusCode, AppError> {
-    let root = user_root(&state, &session).await?;
+    let root = user_root(&state, &session, &headers).await?;
     let rel = safe_rel_path(&q.path)?;
     let path = root.join(rel);
 
@@ -207,9 +243,10 @@ pub struct MoveBody {
 pub async fn move_work_entry(
     State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
     Json(body): Json<MoveBody>,
 ) -> Result<StatusCode, AppError> {
-    let root = user_root(&state, &session).await?;
+    let root = user_root(&state, &session, &headers).await?;
     let from = root.join(safe_rel_path(&body.from)?);
     let to = root.join(safe_rel_path(&body.to)?);
 

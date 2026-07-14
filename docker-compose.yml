@@ -11,6 +11,7 @@ services:
       # DATABASE_URL/WORKSPACES_DIR values in .env are for local `cargo run` and use host-relative
       # paths that don't apply inside the container.
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       PORT: ${PORT:-8080}
     volumes:
       - officesuite-data:/data

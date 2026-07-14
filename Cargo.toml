@@ -8,7 +8,8 @@ axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["fs", "trace"] }
-tower-sessions = "0.12"
+sha2 = "0.10"
+tower-sessions = { version = "0.12", features = ["signed"] }
 tower-sessions-sqlx-store = { version = "0.13", features = ["sqlite"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "uuid", "time"] }
 serde = { version = "1", features = ["derive"] }
