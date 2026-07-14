@@ -22,6 +22,9 @@ use crate::state::AppState;
 use crate::workspace::{safe_rel_path, walk_work_dir, FsEntry, WORK_FILE_EXTENSIONS};
 
 const MAX_COMMENT_LEN: usize = 4000;
+/// Anchors are small client-defined JSON blobs (text range / cell range /
+/// item id); the server only bounds their size.
+const MAX_ANCHOR_LEN: usize = 2000;
 
 // Anonymous link visitors can post comments; cap the rate per IP so a leaked
 // comment-link can't be used to flood a document.
@@ -73,10 +76,6 @@ fn is_work_file(rel_path: &str) -> bool {
         .map(|e| e.to_lowercase())
         .map(|e| WORK_FILE_EXTENSIONS.contains(&e.as_str()))
         .unwrap_or(false)
-}
-
-fn is_document(rel_path: &str) -> bool {
-    rel_path.to_lowercase().ends_with(".mdp")
 }
 
 // ── Share rows ──
@@ -704,6 +703,9 @@ pub struct CommentView {
     created_at: i64,
     /// True when the caller wrote this comment (so the UI can offer delete).
     mine: bool,
+    /// Optional client-defined location in the file (text range, cell range,
+    /// item id) this comment is about; None = the whole file.
+    anchor: Option<String>,
 }
 
 pub async fn list_comments(
@@ -715,12 +717,12 @@ pub async fn list_comments(
     let user_id = optional_user_id(&state, &session, &headers).await;
     let (owner_id, rel_path) =
         resolve_comment_target(&state, user_id.as_deref(), &q, Perm::View).await?;
-    if !is_document(&rel_path) {
-        return Err(AppError::BadRequest("comments are only available on Documents".into()));
+    if !is_work_file(&rel_path) {
+        return Err(AppError::BadRequest("comments are only available on work files".into()));
     }
 
-    let rows = sqlx::query_as::<_, (String, Option<String>, String, i64, Option<String>)>(
-        "SELECT c.id, u.email, c.body, c.created_at, c.author_id
+    let rows = sqlx::query_as::<_, (String, Option<String>, String, i64, Option<String>, Option<String>)>(
+        "SELECT c.id, u.email, c.body, c.created_at, c.author_id, c.anchor
          FROM comments c LEFT JOIN users u ON u.id = c.author_id
          WHERE c.owner_id = ? AND c.rel_path = ?
          ORDER BY c.created_at",
@@ -732,12 +734,13 @@ pub async fn list_comments(
 
     Ok(Json(
         rows.into_iter()
-            .map(|(id, author_email, body, created_at, author_id)| CommentView {
+            .map(|(id, author_email, body, created_at, author_id, anchor)| CommentView {
                 id,
                 author_email,
                 body,
                 created_at,
                 mine: author_id.is_some() && author_id == user_id,
+                anchor,
             })
             .collect(),
     ))
@@ -748,6 +751,8 @@ pub struct CreateCommentBody {
     #[serde(flatten)]
     target: CommentsQuery,
     body: String,
+    #[serde(default)]
+    anchor: Option<String>,
 }
 
 pub async fn create_comment(
@@ -774,8 +779,8 @@ pub async fn create_comment(
 
     let (owner_id, rel_path) =
         resolve_comment_target(&state, user_id.as_deref(), &body.target, Perm::Comment).await?;
-    if !is_document(&rel_path) {
-        return Err(AppError::BadRequest("comments are only available on Documents".into()));
+    if !is_work_file(&rel_path) {
+        return Err(AppError::BadRequest("comments are only available on work files".into()));
     }
 
     let text = body.body.trim();
@@ -784,6 +789,10 @@ pub async fn create_comment(
     }
     if text.len() > MAX_COMMENT_LEN {
         return Err(AppError::BadRequest("comment too long".to_string()));
+    }
+    let anchor = body.anchor.as_deref().filter(|a| !a.is_empty());
+    if anchor.map_or(false, |a| a.len() > MAX_ANCHOR_LEN) {
+        return Err(AppError::BadRequest("anchor too large".to_string()));
     }
     // The file must actually exist to be commented on.
     let full = owner_full_path(&state, &owner_id, &rel_path)?;
@@ -794,8 +803,8 @@ pub async fn create_comment(
     let id = Uuid::new_v4().to_string();
     let created_at = now_ms();
     sqlx::query(
-        "INSERT INTO comments (id, owner_id, rel_path, author_id, body, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO comments (id, owner_id, rel_path, author_id, body, created_at, anchor)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&owner_id)
@@ -803,6 +812,7 @@ pub async fn create_comment(
     .bind(&user_id)
     .bind(text)
     .bind(created_at)
+    .bind(anchor)
     .execute(&state.db)
     .await?;
 
@@ -820,6 +830,7 @@ pub async fn create_comment(
         body: text.to_string(),
         created_at,
         mine: user_id.is_some(),
+        anchor: anchor.map(String::from),
     }))
 }
 

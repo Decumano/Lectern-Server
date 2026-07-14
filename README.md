@@ -78,8 +78,8 @@ The `.env` values for those two are only used by local `cargo run`.
 | GET    | `/api/link/:token`     | Link metadata — **no login needed**, the token is the authorization |
 | GET    | `/api/link/:token/list`| File tree of a folder link                |
 | GET/PUT| `/api/link/:token/file`| Read / write through a link (`?path=`; write needs an edit link) |
-| GET    | `/api/comments`        | Comments on a Document (`?path=` own, `?share=&subPath=` shared, or `?link=&subPath=` via link — the link form needs no login) |
-| POST   | `/api/comments`        | Add a comment (comment/edit permission; Documents `.mdp` only) |
+| GET    | `/api/comments`        | Comments on a work file (`?path=` own, `?share=&subPath=` shared, or `?link=&subPath=` via link — the link form needs no login) |
+| POST   | `/api/comments`        | Add a comment (comment/edit permission; any work file; optional `anchor` JSON pins it to a text range / cell range / item) |
 | DELETE | `/api/comments/:id`    | Delete a comment (author or file owner)   |
 
 Every workspace endpoint scopes reads/writes to `data/workspaces/<user_id>/`, derived from the
