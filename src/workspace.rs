@@ -47,11 +47,11 @@ fn hash_file(path: &Path) -> String {
 pub const WORK_FILE_EXTENSIONS: [&str; 8] = ["mdp", "mds", "mdg", "mdn", "mdl", "mdc", "mde", "mdb"];
 
 /// Root-level sidecar files that sync clients need to see in listings (with a
-/// hash) even though they aren't work files. Currently just the user's custom
-/// document templates, so templates follow their account across devices. The
-/// web UI filters these out of its file tree; the desktop tree never lists
-/// them (its walker only shows work extensions).
-const SYNC_SIDECAR_FILES: [&str; 1] = ["_lktpl.json"];
+/// hash) even though they aren't work files: the user's custom document
+/// templates and roaming UI preferences (theme), so both follow the account
+/// across devices. The web UI filters these out of its file tree; the desktop
+/// tree never lists them (its walker only shows work extensions).
+const SYNC_SIDECAR_FILES: [&str; 2] = ["_lktpl.json", "_lkprefs.json"];
 
 fn modified_ms(metadata: &fs::Metadata) -> u64 {
     metadata
