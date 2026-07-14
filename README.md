@@ -92,12 +92,18 @@ See `.env.example`: `DATABASE_URL`, `SESSION_SECRET`, `PORT`, `WORKSPACES_DIR`, 
 
 ## Desktop app downloads
 
-The login gate links to `/download.html`, a static page that lists the installers and
-portable builds attached to the latest GitHub Release of
-[Decumano/OfficeSuite](https://github.com/Decumano/OfficeSuite/releases) (fetched
-client-side from the GitHub API, with a fallback link to the releases page). Releases
-are produced by that repo's `release.yml` workflow — push a `v*` tag there and the
-downloads show up here automatically; nothing on this server needs redeploying.
+The login gate links to `/download.html`, which lists the installers and portable
+builds attached to the latest GitHub Release of the repo named by
+`DESKTOP_RELEASES_REPO` (default [Decumano/OfficeSuite](https://github.com/Decumano/OfficeSuite/releases)).
+Releases are produced by that repo's `release.yml` workflow — push a `v*` tag there
+and the downloads show up here automatically; nothing on this server needs redeploying.
+
+The page asks this server first (`/api/downloads/latest`), which lists the release
+and streams the assets itself — required while the releases repo is **private**,
+since browsers can't reach it directly. Set `GITHUB_RELEASES_TOKEN` to a fine-grained
+PAT with *Contents: Read-only* on that repo (the token stays server-side). If the
+repo is public, the token is unnecessary and the page can also fall back to calling
+the GitHub API from the browser.
 
 ## Security notes
 

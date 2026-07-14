@@ -5,11 +5,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::downloads::Releases;
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: SqlitePool,
     pub workspaces_dir: PathBuf,
     pub auth_limiter: RateLimiter,
+    pub releases: Arc<Releases>,
 }
 
 /// Longest window any caller uses; entries older than this are dropped on the

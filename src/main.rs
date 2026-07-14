@@ -1,5 +1,6 @@
 mod auth;
 mod db;
+mod downloads;
 mod error;
 mod export;
 mod share;
@@ -58,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
         db,
         workspaces_dir,
         auth_limiter: RateLimiter::default(),
+        releases: std::sync::Arc::new(downloads::Releases::from_env()),
     };
 
     let api = Router::new()
@@ -100,6 +102,11 @@ async fn main() -> anyhow::Result<()> {
             get(share::list_comments).post(share::create_comment),
         )
         .route("/comments/:id", delete(share::delete_comment))
+        .route("/downloads/latest", get(downloads::latest_release))
+        .route(
+            "/downloads/asset/:id/:name",
+            get(downloads::download_asset),
+        )
         .route(
             "/export/pdf",
             post(export::export_pdf).layer(DefaultBodyLimit::max(50 * 1024 * 1024)),

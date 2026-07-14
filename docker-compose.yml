@@ -12,6 +12,8 @@ services:
       # paths that don't apply inside the container.
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      DESKTOP_RELEASES_REPO: ${DESKTOP_RELEASES_REPO:-Decumano/OfficeSuite}
+      GITHUB_RELEASES_TOKEN: ${GITHUB_RELEASES_TOKEN:-}
       PORT: ${PORT:-8080}
     volumes:
       - officesuite-data:/data
