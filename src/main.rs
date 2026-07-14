@@ -6,7 +6,10 @@ mod share;
 mod state;
 mod workspace;
 
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request};
+use axum::http::{header, HeaderValue};
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::routing::{delete, get, post};
 use axum::Router;
 use state::{AppState, RateLimiter};
@@ -130,7 +133,10 @@ async fn main() -> anyhow::Result<()> {
     // from this process, and the desktop app calls the API from Rust (reqwest),
     // which isn't subject to CORS. Not exposing cross-origin access is the
     // safer default for a self-hosted instance.
-    let app = app.layer(TraceLayer::new_for_http()).with_state(state);
+    let app = app
+        .layer(middleware::from_fn(static_cache_control))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
     tracing::info!("officesuite-web listening on http://0.0.0.0:{port}");
@@ -141,4 +147,26 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     Ok(())
+}
+
+/// Cache policy for the static frontend. Browsers heuristically cache
+/// responses that carry no Cache-Control at all (10% of file age), which
+/// meant a deployed update could serve a stale index.html — and with it,
+/// stale everything — for days. HTML entry points must always revalidate
+/// (`no-cache` still allows 304s, so it stays cheap); other assets get an
+/// hour, and index.html's `?v=N` query params handle hard busts on deploys.
+async fn static_cache_control(req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_string();
+    let mut res = next.run(req).await;
+    if !path.starts_with("/api") {
+        let is_html = path == "/" || path.ends_with(".html") || !path.contains('.');
+        let value = if is_html {
+            "no-cache"
+        } else {
+            "public, max-age=3600, must-revalidate"
+        };
+        res.headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static(value));
+    }
+    res
 }
