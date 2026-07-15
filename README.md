@@ -79,6 +79,10 @@ The `.env` values for those two are only used by local `cargo run`.
 | GET    | `/api/link/:token/list`| File tree of a folder link                |
 | GET/PUT| `/api/link/:token/file`| Read / write through a link (`?path=`; write needs an edit link) |
 | GET    | `/api/comments`        | Comments on a work file (`?path=` own, `?share=&subPath=` shared, or `?link=&subPath=` via link — the link form needs no login) |
+| GET    | `/api/fonts`           | List the current account's custom fonts   |
+| POST   | `/api/fonts`           | Upload a font (`?familyName=&filename=`, raw body; .ttf/.otf/.woff/.woff2, 5MB max, 30 fonts max) |
+| GET    | `/api/fonts/:id`       | Raw font bytes (owner only)               |
+| DELETE | `/api/fonts/:id`       | Delete a font                             |
 | POST   | `/api/comments`        | Add a comment (comment/edit permission; any work file; optional `anchor` JSON pins it to a text range / cell range / item) |
 | DELETE | `/api/comments/:id`    | Delete a comment (author or file owner)   |
 
@@ -104,6 +108,24 @@ since browsers can't reach it directly. Set `GITHUB_RELEASES_TOKEN` to a fine-gr
 PAT with *Contents: Read-only* on that repo (the token stays server-side). If the
 repo is public, the token is unnecessary and the page can also fall back to calling
 the GitHub API from the browser.
+
+## Custom fonts
+
+Settings &rarr; Custom fonts lets each account upload font files (TTF/OTF/WOFF/WOFF2) that then render
+the same way for everyone who opens that account's documents — in the live editor/preview and in
+exported PDFs — regardless of what's installed on the visitor's machine or this server's container.
+
+This is deliberately separate from the font *picker*'s `queryLocalFonts()` path (which lists fonts
+already on the visitor's own device): that browser API only exists in a secure context (HTTPS, or
+literally `localhost`) and only in Chromium, so it silently contributes nothing on a plain-HTTP
+deployment. Uploaded fonts don't have that limitation — they're served as ordinary HTTP assets, so
+`@font-face` works in any browser over any origin. PDF export (headless Chromium, sandboxed to only
+`file://`/`data:` requests — see `src/export.rs`) gets the account's fonts base64-embedded directly
+into the exported HTML, since that sandbox can't fetch them any other way.
+
+Installing fonts into the server's own OS/container (e.g. via `fonts/` + the Dockerfile) is a
+separate, optional mechanism that only affects PDF export's system-font fallback — it does **not**
+make a font available in the live editor, since that runs entirely in each visitor's own browser.
 
 ## Security notes
 

@@ -16,6 +16,7 @@
 // images), blocking every other request - including IP-literal SSRF targets
 // that `--host-resolver-rules` alone wouldn't catch.
 
+use axum::extract::State;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use headless_chrome::browser::tab::RequestPausedDecision;
@@ -32,11 +33,34 @@ use tower_sessions::Session;
 
 use crate::auth::current_user_id;
 use crate::error::AppError;
+use crate::fonts::embed_account_fonts_style;
+use crate::state::AppState;
 
 const RENDER_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub async fn export_pdf(session: Session, html: String) -> Result<Response, AppError> {
-    current_user_id(&session).await?;
+pub async fn export_pdf(
+    State(state): State<AppState>,
+    session: Session,
+    html: String,
+) -> Result<Response, AppError> {
+    let user_id = current_user_id(&session).await?;
+
+    // The renderer below only ever accepts file:// and data: requests (see
+    // module doc comment), so any custom fonts the account uploaded have to
+    // already be inline as data: URIs before Chromium sees the page — an
+    // http:// url() back to this server would just be dropped.
+    let font_style = embed_account_fonts_style(&state, &user_id).await;
+    let html = match html.find("<head>") {
+        Some(pos) => {
+            let insert_at = pos + "<head>".len();
+            let mut out = String::with_capacity(html.len() + font_style.len());
+            out.push_str(&html[..insert_at]);
+            out.push_str(&font_style);
+            out.push_str(&html[insert_at..]);
+            out
+        }
+        None => format!("{font_style}{html}"),
+    };
 
     let pdf_bytes = tokio::time::timeout(
         RENDER_TIMEOUT,

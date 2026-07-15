@@ -3,6 +3,7 @@ mod db;
 mod downloads;
 mod error;
 mod export;
+mod fonts;
 mod share;
 mod state;
 mod workspace;
@@ -32,12 +33,15 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://data/officesuite.db".into());
     let workspaces_dir =
         PathBuf::from(std::env::var("WORKSPACES_DIR").unwrap_or_else(|_| "data/workspaces".into()));
+    let fonts_dir =
+        PathBuf::from(std::env::var("FONTS_DIR").unwrap_or_else(|_| "data/fonts".into()));
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8080);
 
     std::fs::create_dir_all(&workspaces_dir)?;
+    std::fs::create_dir_all(&fonts_dir)?;
 
     let db = db::connect(&database_url).await?;
 
@@ -58,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         db,
         workspaces_dir,
+        fonts_dir,
         auth_limiter: RateLimiter::default(),
         releases: std::sync::Arc::new(downloads::Releases::from_env()),
     };
@@ -102,6 +107,11 @@ async fn main() -> anyhow::Result<()> {
             get(share::list_comments).post(share::create_comment),
         )
         .route("/comments/:id", delete(share::delete_comment))
+        .route("/fonts", post(fonts::upload_font).get(fonts::list_fonts))
+        .route(
+            "/fonts/:id",
+            get(fonts::font_file).delete(fonts::delete_font),
+        )
         .route("/downloads/latest", get(downloads::latest_release))
         .route(
             "/downloads/asset/:id/:name",

@@ -11,6 +11,7 @@ use crate::downloads::Releases;
 pub struct AppState {
     pub db: SqlitePool,
     pub workspaces_dir: PathBuf,
+    pub fonts_dir: PathBuf,
     pub auth_limiter: RateLimiter,
     pub releases: Arc<Releases>,
 }
