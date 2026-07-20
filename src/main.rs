@@ -77,6 +77,7 @@ async fn main() -> anyhow::Result<()> {
             "/workspace/file",
             get(workspace::read_work_file).put(workspace::write_work_file),
         )
+        .route("/workspace/stat", get(workspace::stat_work_file))
         .route("/workspace/folder", post(workspace::create_work_folder))
         .route("/workspace/entry", delete(workspace::delete_work_entry))
         .route("/workspace/move", post(workspace::move_work_entry))
@@ -91,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
             "/shared/file",
             get(share::read_shared_file).put(share::write_shared_file),
         )
+        .route("/shared/stat", get(share::stat_shared_file))
         .route(
             "/links",
             post(share::create_link).get(share::list_links_for_entry),
@@ -102,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
             "/link/:token/file",
             get(share::link_read_file).put(share::link_write_file),
         )
+        .route("/link/:token/stat", get(share::link_stat_file))
         .route(
             "/comments",
             get(share::list_comments).post(share::create_comment),

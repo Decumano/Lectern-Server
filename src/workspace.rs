@@ -161,6 +161,36 @@ pub struct PathQuery {
     path: String,
 }
 
+/// Cheap change-detection for one file: lets a client poll "did anyone else
+/// write this?" without downloading the content or walking the whole tree.
+#[derive(Serialize)]
+pub struct FileStat {
+    modified: u64,
+    hash: String,
+}
+
+pub fn stat_file(path: &Path) -> Result<FileStat, AppError> {
+    let metadata = fs::metadata(path)?;
+    if !metadata.is_file() {
+        return Err(AppError::NotFound);
+    }
+    Ok(FileStat {
+        modified: modified_ms(&metadata),
+        hash: hash_file(path),
+    })
+}
+
+pub async fn stat_work_file(
+    State(state): State<AppState>,
+    session: Session,
+    headers: HeaderMap,
+    Query(q): Query<PathQuery>,
+) -> Result<Json<FileStat>, AppError> {
+    let root = user_root(&state, &session, &headers).await?;
+    let rel = safe_rel_path(&q.path)?;
+    Ok(Json(stat_file(&root.join(rel))?))
+}
+
 pub async fn read_work_file(
     State(state): State<AppState>,
     session: Session,

@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::auth::current_user_id_with_headers;
 use crate::error::AppError;
 use crate::state::AppState;
-use crate::workspace::{safe_rel_path, walk_work_dir, FsEntry, WORK_FILE_EXTENSIONS};
+use crate::workspace::{safe_rel_path, stat_file, walk_work_dir, FileStat, FsEntry, WORK_FILE_EXTENSIONS};
 
 const MAX_COMMENT_LEN: usize = 4000;
 /// Anchors are small client-defined JSON blobs (text range / cell range /
@@ -507,6 +507,20 @@ pub async fn link_read_file(
     fs::read_to_string(full).map_err(|e| e.into())
 }
 
+/// Change-detection poll through a share link (the token is the authorization).
+pub async fn link_stat_file(
+    State(state): State<AppState>,
+    AxumPath(token): AxumPath<String>,
+    Query(q): Query<LinkSubQuery>,
+) -> Result<Json<FileStat>, AppError> {
+    let (link, effective, _perm) = resolve_link_access(&state, &token, &q.path).await?;
+    if !is_work_file(&effective) {
+        return Err(AppError::BadRequest("not a work file".to_string()));
+    }
+    let full = owner_full_path(&state, &link.owner_id, &effective)?;
+    Ok(Json(stat_file(&full)?))
+}
+
 pub async fn link_write_file(
     State(state): State<AppState>,
     AxumPath(token): AxumPath<String>,
@@ -617,6 +631,23 @@ pub async fn read_shared_file(
     }
     let full = owner_full_path(&state, &share.owner_id, &effective)?;
     fs::read_to_string(full).map_err(|e| e.into())
+}
+
+/// Change-detection poll for a shared file (see `workspace::stat_work_file`);
+/// any permission level may poll, since view access already implies reading.
+pub async fn stat_shared_file(
+    State(state): State<AppState>,
+    session: Session,
+    headers: HeaderMap,
+    Query(q): Query<SharedQuery>,
+) -> Result<Json<FileStat>, AppError> {
+    let user_id = current_user_id_with_headers(&state, &session, &headers).await?;
+    let (share, effective, _perm) = resolve_share_access(&state, &user_id, &q.share, &q.path).await?;
+    if !is_work_file(&effective) {
+        return Err(AppError::BadRequest("not a work file".to_string()));
+    }
+    let full = owner_full_path(&state, &share.owner_id, &effective)?;
+    Ok(Json(stat_file(&full)?))
 }
 
 pub async fn write_shared_file(
