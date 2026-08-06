@@ -80,6 +80,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/workspace/stat", get(workspace::stat_work_file))
         .route("/workspace/folder", post(workspace::create_work_folder))
         .route("/workspace/entry", delete(workspace::delete_work_entry))
+        .route("/workspace/deleted", get(workspace::list_deleted))
         .route("/workspace/move", post(workspace::move_work_entry))
         .route(
             "/shares",

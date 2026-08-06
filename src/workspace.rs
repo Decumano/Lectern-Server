@@ -79,15 +79,80 @@ pub fn safe_rel_path(rel_path: &str) -> Result<PathBuf, AppError> {
     Ok(buf)
 }
 
+async fn user_ctx(
+    state: &AppState,
+    session: &Session,
+    headers: &HeaderMap,
+) -> Result<(String, PathBuf), AppError> {
+    let user_id = current_user_id_with_headers(state, session, headers).await?;
+    let root = state.workspaces_dir.join(&user_id);
+    fs::create_dir_all(&root)?;
+    Ok((user_id, root))
+}
+
 async fn user_root(
     state: &AppState,
     session: &Session,
     headers: &HeaderMap,
 ) -> Result<PathBuf, AppError> {
-    let user_id = current_user_id_with_headers(state, session, headers).await?;
-    let root = state.workspaces_dir.join(user_id);
-    fs::create_dir_all(&root)?;
-    Ok(root)
+    Ok(user_ctx(state, session, headers).await?.1)
+}
+
+// ── Deletion tombstones (see migrations/0007_deleted_files.sql) ──
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Canonical tombstone key for a validated rel path: forward-slash separators,
+/// matching the rel-path form clients use in every request and listing.
+fn rel_key(rel: &Path) -> String {
+    rel.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+async fn record_tombstone(state: &AppState, user_id: &str, rel_path: &str) {
+    let _ = sqlx::query(
+        "INSERT INTO deleted_files (user_id, rel_path, deleted_at) VALUES (?, ?, ?)
+         ON CONFLICT(user_id, rel_path) DO UPDATE SET deleted_at = excluded.deleted_at",
+    )
+    .bind(user_id)
+    .bind(rel_path)
+    .bind(now_ms())
+    .execute(&state.db)
+    .await;
+}
+
+async fn clear_tombstone(state: &AppState, user_id: &str, rel_path: &str) {
+    let _ = sqlx::query("DELETE FROM deleted_files WHERE user_id = ? AND rel_path = ?")
+        .bind(user_id)
+        .bind(rel_path)
+        .execute(&state.db)
+        .await;
+}
+
+/// Every file (not directory) under `dir`, as rel keys prefixed with
+/// `rel_prefix` — used to tombstone the contents of a deleted/moved folder.
+fn collect_files_under(dir: &Path, rel_prefix: &str, out: &mut Vec<String>) {
+    let Ok(read) = fs::read_dir(dir) else { return };
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let rel = if rel_prefix.is_empty() {
+            name
+        } else {
+            format!("{}/{}", rel_prefix, name)
+        };
+        if entry.path().is_dir() {
+            collect_files_under(&entry.path(), &rel, out);
+        } else {
+            out.push(rel);
+        }
+    }
 }
 
 pub fn walk_work_dir(dir: &Path, rel_prefix: &str) -> Result<Vec<FsEntry>, AppError> {
@@ -209,15 +274,19 @@ pub async fn write_work_file(
     Query(q): Query<PathQuery>,
     content: String,
 ) -> Result<StatusCode, AppError> {
-    let root = user_root(&state, &session, &headers).await?;
+    let (user_id, root) = user_ctx(&state, &session, &headers).await?;
     let rel = safe_rel_path(&q.path)?;
-    let path = root.join(rel);
+    let path = root.join(&rel);
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
 
     fs::write(path, content)?;
+
+    // Writing a path makes it a live file again; a stale tombstone would
+    // tell sync clients to delete what the user just (re)created.
+    clear_tombstone(&state, &user_id, &rel_key(&rel)).await;
     Ok(StatusCode::OK)
 }
 
@@ -252,14 +321,21 @@ pub async fn delete_work_entry(
     headers: HeaderMap,
     Query(q): Query<DeleteQuery>,
 ) -> Result<StatusCode, AppError> {
-    let root = user_root(&state, &session, &headers).await?;
+    let (user_id, root) = user_ctx(&state, &session, &headers).await?;
     let rel = safe_rel_path(&q.path)?;
-    let path = root.join(rel);
+    let path = root.join(&rel);
+    let key = rel_key(&rel);
 
     if q.is_dir {
+        let mut inside = Vec::new();
+        collect_files_under(&path, &key, &mut inside);
         fs::remove_dir_all(path)?;
+        for file_rel in inside {
+            record_tombstone(&state, &user_id, &file_rel).await;
+        }
     } else {
         fs::remove_file(path)?;
+        record_tombstone(&state, &user_id, &key).await;
     }
     Ok(StatusCode::OK)
 }
@@ -276,14 +352,64 @@ pub async fn move_work_entry(
     headers: HeaderMap,
     Json(body): Json<MoveBody>,
 ) -> Result<StatusCode, AppError> {
-    let root = user_root(&state, &session, &headers).await?;
-    let from = root.join(safe_rel_path(&body.from)?);
-    let to = root.join(safe_rel_path(&body.to)?);
+    let (user_id, root) = user_ctx(&state, &session, &headers).await?;
+    let from_rel = safe_rel_path(&body.from)?;
+    let to_rel = safe_rel_path(&body.to)?;
+    let from = root.join(&from_rel);
+    let to = root.join(&to_rel);
+    let from_key = rel_key(&from_rel);
+    let to_key = rel_key(&to_rel);
+
+    // A move is a delete at `from` plus a create at `to`, tombstone-wise:
+    // stale copies of the old path must not resurface, and any old tombstone
+    // on the destination must not kill the file that now lives there.
+    let mut moved_files = Vec::new();
+    if from.is_dir() {
+        collect_files_under(&from, &from_key, &mut moved_files);
+    } else {
+        moved_files.push(from_key.clone());
+    }
 
     if let Some(parent) = to.parent() {
         fs::create_dir_all(parent)?;
     }
 
     fs::rename(from, to)?;
+
+    for file_rel in moved_files {
+        record_tombstone(&state, &user_id, &file_rel).await;
+        let dest = format!("{}{}", to_key, &file_rel[from_key.len()..]);
+        clear_tombstone(&state, &user_id, &dest).await;
+    }
     Ok(StatusCode::OK)
+}
+
+#[derive(Serialize)]
+pub struct DeletedEntry {
+    #[serde(rename = "relPath")]
+    rel_path: String,
+    #[serde(rename = "deletedAt")]
+    deleted_at: i64,
+}
+
+/// Tombstone listing for sync clients: files this workspace deleted, with
+/// when. Lets a client holding an unknown local copy distinguish "deleted
+/// elsewhere, drop it" from "created locally, push it".
+pub async fn list_deleted(
+    State(state): State<AppState>,
+    session: Session,
+    headers: HeaderMap,
+) -> Result<Json<Vec<DeletedEntry>>, AppError> {
+    let (user_id, _) = user_ctx(&state, &session, &headers).await?;
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT rel_path, deleted_at FROM deleted_files WHERE user_id = ?",
+    )
+    .bind(&user_id)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(rel_path, deleted_at)| DeletedEntry { rel_path, deleted_at })
+            .collect(),
+    ))
 }
