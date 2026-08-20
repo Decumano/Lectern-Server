@@ -1,6 +1,7 @@
+use axum::http::HeaderMap;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
-use std::net::IpAddr;
+use std::collections::{HashMap, HashSet};
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -14,6 +15,34 @@ pub struct AppState {
     pub fonts_dir: PathBuf,
     pub auth_limiter: RateLimiter,
     pub releases: Arc<Releases>,
+    /// Peer addresses (the reverse proxy in front of this server) whose
+    /// X-Forwarded-For header is trusted for rate-limit bucketing. Parsed
+    /// once from TRUSTED_PROXIES at startup.
+    pub trusted_proxies: Arc<HashSet<IpAddr>>,
+    /// Per-account workspace size ceiling in bytes; 0 disables the check.
+    pub workspace_quota_bytes: u64,
+}
+
+impl AppState {
+    /// The IP the rate limiter should bucket a request under. Directly
+    /// exposed servers use the TCP peer address. Behind a reverse proxy every
+    /// request arrives from the proxy's IP — one shared bucket, so a single
+    /// abuser could exhaust `register`/`anon-comment` for everyone. When the
+    /// peer is listed in TRUSTED_PROXIES, use the rightmost X-Forwarded-For
+    /// entry instead: that's the value our own proxy appended, the entries
+    /// left of it are client-controlled and stay untrusted.
+    pub fn client_ip(&self, addr: &SocketAddr, headers: &HeaderMap) -> IpAddr {
+        let peer = addr.ip();
+        if !self.trusted_proxies.contains(&peer) {
+            return peer;
+        }
+        headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.rsplit(',').next())
+            .and_then(|v| v.trim().parse::<IpAddr>().ok())
+            .unwrap_or(peer)
+    }
 }
 
 /// Longest window any caller uses; entries older than this are dropped on the

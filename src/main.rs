@@ -59,12 +59,30 @@ async fn main() -> anyhow::Result<()> {
         .with_secure(cookie_secure)
         .with_expiry(Expiry::OnInactivity(Duration::days(30)));
 
+    // Reverse-proxy peers whose X-Forwarded-For is trusted for rate-limit
+    // bucketing, e.g. TRUSTED_PROXIES=127.0.0.1,::1
+    let trusted_proxies: std::collections::HashSet<std::net::IpAddr> =
+        std::env::var("TRUSTED_PROXIES")
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+
+    // Per-account workspace ceiling; registration is open, so without a cap
+    // any account could fill the disk. 0 disables the check.
+    let workspace_quota_bytes: u64 = std::env::var("WORKSPACE_QUOTA_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256 * 1024 * 1024);
+
     let state = AppState {
         db,
         workspaces_dir,
         fonts_dir,
         auth_limiter: RateLimiter::default(),
         releases: std::sync::Arc::new(downloads::Releases::from_env()),
+        trusted_proxies: std::sync::Arc::new(trusted_proxies),
+        workspace_quota_bytes,
     };
 
     let api = Router::new()
@@ -111,7 +129,17 @@ async fn main() -> anyhow::Result<()> {
             get(share::list_comments).post(share::create_comment),
         )
         .route("/comments/:id", delete(share::delete_comment))
-        .route("/fonts", post(fonts::upload_font).get(fonts::list_fonts))
+        // Axum's default body limit is 2MB, below the 5MB per-font cap that
+        // fonts.rs enforces — without this override, fonts between 2 and 5MB
+        // died with an opaque 413 before the handler ever ran. Small headroom
+        // on top of MAX_FONT_BYTES so the handler's own check produces the
+        // descriptive error.
+        .route(
+            "/fonts",
+            post(fonts::upload_font)
+                .get(fonts::list_fonts)
+                .layer(DefaultBodyLimit::max(fonts::MAX_FONT_BYTES + 64 * 1024)),
+        )
         .route(
             "/fonts/:id",
             get(fonts::font_file).delete(fonts::delete_font),

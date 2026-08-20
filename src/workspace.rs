@@ -79,6 +79,47 @@ pub fn safe_rel_path(rel_path: &str) -> Result<PathBuf, AppError> {
     Ok(buf)
 }
 
+/// Total bytes stored under a workspace root. Walks the tree rather than
+/// tracking a running total in the DB: workspaces are small (text files) and
+/// this way the number can't drift out of sync with what's on disk.
+fn dir_size_bytes(dir: &Path) -> u64 {
+    let Ok(read) = fs::read_dir(dir) else { return 0 };
+    read.flatten()
+        .map(|entry| match entry.metadata() {
+            Ok(m) if m.is_dir() => dir_size_bytes(&entry.path()),
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        })
+        .sum()
+}
+
+/// Registration is open, so an unbounded workspace lets any account fill the
+/// server's disk. Checked before a write that would grow the workspace;
+/// replacing a file with a smaller one always succeeds, so a user who hits
+/// the ceiling can still edit their way back under it.
+pub fn check_quota(
+    state: &AppState,
+    root: &Path,
+    target: &Path,
+    incoming_len: u64,
+) -> Result<(), AppError> {
+    if state.workspace_quota_bytes == 0 {
+        return Ok(());
+    }
+    let existing_len = fs::metadata(target).map(|m| m.len()).unwrap_or(0);
+    if incoming_len <= existing_len {
+        return Ok(());
+    }
+    let projected = dir_size_bytes(root) - existing_len + incoming_len;
+    if projected > state.workspace_quota_bytes {
+        return Err(AppError::BadRequest(format!(
+            "workspace is full ({} MB max) — delete something first",
+            state.workspace_quota_bytes / (1024 * 1024)
+        )));
+    }
+    Ok(())
+}
+
 async fn user_ctx(
     state: &AppState,
     session: &Session,
@@ -277,6 +318,8 @@ pub async fn write_work_file(
     let (user_id, root) = user_ctx(&state, &session, &headers).await?;
     let rel = safe_rel_path(&q.path)?;
     let path = root.join(&rel);
+
+    check_quota(&state, &root, &path, content.len() as u64)?;
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

@@ -136,3 +136,25 @@ make a font available in the live editor, since that runs entirely in each visit
   proxy IP won't lock each other out.
 - Desktop clients authenticate with `Authorization: Bearer <apiToken>` (returned by
   login/register); browsers use the session cookie.
+
+## License
+
+**AGPLv3** — see [LICENSE](LICENSE).
+
+The server is licensed more strictly than the rest of the suite on purpose. Under plain
+GPLv3, running a modified copy as a public service is not distribution, so the operator
+would owe nobody their changes. AGPLv3 section 13 closes that: **if you run a modified
+version of this server and let other people use it over a network, those users must be
+offered its Corresponding Source.** Running it unmodified, or privately, triggers no such
+obligation.
+
+The frontend in `web/` is the
+[officesuite-frontend](https://github.com/Decumano/officesuite-frontend) submodule and
+stays GPLv3, as does the [OfficeSuite](https://github.com/Decumano/OfficeSuite) desktop
+app. The two licenses are explicitly compatible — AGPLv3 §13 and GPLv3 §13 each permit
+linking with the other — and combining them gives a whole that is conveyed under AGPLv3.
+In practice: if you modify `web/` and deploy it here, publish those frontend changes too.
+
+Third-party libraries vendored into the frontend keep their own licenses, listed in
+`web/THIRD-PARTY-NOTICES.md`. File formats served by this API are documented in
+[web/FLAVOR.md](web/FLAVOR.md).

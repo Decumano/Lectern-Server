@@ -38,6 +38,18 @@ use crate::state::AppState;
 
 const RENDER_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Each render launches a whole Chromium process, so unbounded concurrency is
+/// a trivial way to exhaust the server's RAM and CPU. Requests queue for one
+/// of a few slots instead, and give up rather than pile up if the queue
+/// doesn't clear.
+const MAX_CONCURRENT_RENDERS: usize = 2;
+const QUEUE_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn render_slots() -> &'static tokio::sync::Semaphore {
+    static SLOTS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    SLOTS.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_RENDERS))
+}
+
 pub async fn export_pdf(
     State(state): State<AppState>,
     session: Session,
@@ -62,14 +74,21 @@ pub async fn export_pdf(
         None => format!("{font_style}{html}"),
     };
 
-    let pdf_bytes = tokio::time::timeout(
-        RENDER_TIMEOUT,
-        tokio::task::spawn_blocking(move || render_pdf(&html)),
-    )
-    .await
-    .map_err(|_| AppError::Internal("PDF render timed out".to_string()))?
-    .map_err(|e| AppError::Internal(e.to_string()))?
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    // Hold a render slot for the whole render. The permit is released when
+    // `_permit` drops, i.e. after the blocking task has finished either way.
+    let _permit = tokio::time::timeout(QUEUE_TIMEOUT, render_slots().acquire())
+        .await
+        .map_err(|_| AppError::Internal("PDF renderer is busy, try again".to_string()))?
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    // The timeout bounds the render inside the blocking thread rather than
+    // just the wait for it: `tokio::time::timeout` around `spawn_blocking`
+    // would return early while leaving the thread stuck on a hung Chromium
+    // forever, leaking a worker on every such request.
+    let pdf_bytes = tokio::task::spawn_blocking(move || render_pdf(&html))
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok((
         StatusCode::OK,
@@ -88,10 +107,15 @@ fn render_pdf(html: &str) -> anyhow::Result<Vec<u8>> {
         LaunchOptionsBuilder::default()
             .headless(true)
             .sandbox(false)
+            // Without these, a page that never finishes loading parks this
+            // thread indefinitely — the caller's timeout can't reclaim a
+            // blocked thread, so the bound has to live in here.
+            .idle_browser_timeout(RENDER_TIMEOUT)
             .args(vec![OsStr::new("--host-resolver-rules=MAP * 0.0.0.0")])
             .build()?,
     )?;
     let tab = browser.new_tab()?;
+    tab.set_default_timeout(RENDER_TIMEOUT);
 
     tab.call_method(SetScriptExecutionDisabled { value: true })?;
 

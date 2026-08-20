@@ -133,9 +133,10 @@ pub async fn register(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     session: Session,
+    headers: HeaderMap,
     Json(creds): Json<Credentials>,
 ) -> Result<Json<UserView>, AppError> {
-    let ip = addr.ip();
+    let ip = state.client_ip(&addr, &headers);
     if state
         .auth_limiter
         .is_limited(ip, "register", REGISTER_LIMIT, REGISTER_WINDOW)
@@ -192,9 +193,10 @@ pub async fn login(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     session: Session,
+    headers: HeaderMap,
     Json(creds): Json<Credentials>,
 ) -> Result<Json<UserView>, AppError> {
-    let ip = addr.ip();
+    let ip = state.client_ip(&addr, &headers);
     if state
         .auth_limiter
         .is_limited(ip, "login-fail", LOGIN_FAIL_LIMIT, LOGIN_FAIL_WINDOW)
@@ -249,22 +251,31 @@ pub async fn logout(session: Session) -> Result<StatusOk, AppError> {
     Ok(StatusOk)
 }
 
+/// Identity without the API token. `/me` is reachable with nothing but the
+/// session cookie, so returning the long-lived bearer token here would let
+/// any script running on the page trade same-origin access for a permanent,
+/// non-expiring credential. The desktop app receives its token from
+/// login/register, which require the password, and doesn't call this.
+#[derive(Serialize)]
+pub struct MeView {
+    pub id: String,
+    pub email: String,
+}
+
 pub async fn me(
     State(state): State<AppState>,
     session: Session,
     headers: HeaderMap,
-) -> Result<Json<UserView>, AppError> {
+) -> Result<Json<MeView>, AppError> {
     let id = current_user_id_with_headers(&state, &session, &headers).await?;
 
-    let row = sqlx::query_as::<_, (String, String, String)>(
-        "SELECT id, email, api_token FROM users WHERE id = ?",
-    )
-    .bind(&id)
-    .fetch_optional(&state.db)
-    .await?;
+    let row = sqlx::query_as::<_, (String, String)>("SELECT id, email FROM users WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.db)
+        .await?;
 
-    let (id, email, api_token) = row.ok_or(AppError::Unauthorized)?;
-    Ok(Json(UserView { id, email, api_token }))
+    let (id, email) = row.ok_or(AppError::Unauthorized)?;
+    Ok(Json(MeView { id, email }))
 }
 
 fn time_now() -> i64 {

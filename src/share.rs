@@ -19,7 +19,9 @@ use uuid::Uuid;
 use crate::auth::current_user_id_with_headers;
 use crate::error::AppError;
 use crate::state::AppState;
-use crate::workspace::{safe_rel_path, stat_file, walk_work_dir, FileStat, FsEntry, WORK_FILE_EXTENSIONS};
+use crate::workspace::{
+    check_quota, safe_rel_path, stat_file, walk_work_dir, FileStat, FsEntry, WORK_FILE_EXTENSIONS,
+};
 
 const MAX_COMMENT_LEN: usize = 4000;
 /// Anchors are small client-defined JSON blobs (text range / cell range /
@@ -539,6 +541,10 @@ pub async fn link_write_file(
     if !full.is_file() {
         return Err(AppError::NotFound);
     }
+    // Writes land in the owner's workspace, so they count against the
+    // owner's quota — otherwise an edit share is a way around it.
+    let owner_root = state.workspaces_dir.join(&link.owner_id);
+    check_quota(&state, &owner_root, &full, content.len() as u64)?;
     fs::write(full, content)?;
     Ok(StatusCode::OK)
 }
@@ -671,6 +677,8 @@ pub async fn write_shared_file(
     if !full.is_file() {
         return Err(AppError::NotFound);
     }
+    let owner_root = state.workspaces_dir.join(&share.owner_id);
+    check_quota(&state, &owner_root, &full, content.len() as u64)?;
     fs::write(full, content)?;
     Ok(StatusCode::OK)
 }
@@ -798,7 +806,7 @@ pub async fn create_comment(
     // Anonymous posting is only reachable through comment/edit links; keep a
     // per-IP lid on it since the author can't be held accountable otherwise.
     if user_id.is_none() {
-        let ip = addr.ip();
+        let ip = state.client_ip(&addr, &headers);
         if state
             .auth_limiter
             .is_limited(ip, "anon-comment", COMMENT_LIMIT, COMMENT_WINDOW)

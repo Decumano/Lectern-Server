@@ -26,7 +26,7 @@ use crate::auth::current_user_id_with_headers;
 use crate::error::AppError;
 use crate::state::AppState;
 
-const MAX_FONT_BYTES: usize = 5 * 1024 * 1024; // 5MB per font file
+pub const MAX_FONT_BYTES: usize = 5 * 1024 * 1024; // 5MB per font file
 const MAX_FONTS_PER_ACCOUNT: i64 = 30;
 
 fn content_type_for(ext: &str) -> Option<&'static str> {
@@ -94,7 +94,16 @@ pub async fn upload_font(
     let user_id = current_user_id_with_headers(&state, &session, &headers).await?;
 
     let family_name = q.family_name.trim();
-    if family_name.is_empty() || family_name.len() > 100 {
+    // The name is interpolated into a CSS string inside a `<style>` element
+    // for PDF export (see embed_account_fonts_style); reject anything that
+    // could escape either context up front, so what's stored is always safe
+    // to emit verbatim.
+    if family_name.is_empty()
+        || family_name.len() > 100
+        || family_name.chars().any(|c| {
+            c.is_control() || matches!(c, '\'' | '"' | '<' | '>' | '\\' | '{' | '}' | ';' | '&')
+        })
+    {
         return Err(AppError::BadRequest("invalid font family name".to_string()));
     }
     let ext = std::path::Path::new(&q.filename)
@@ -227,6 +236,19 @@ pub async fn delete_font(
     Ok(StatusCode::OK)
 }
 
+/// Sanitizes a user-supplied font family name for use inside a single-quoted
+/// CSS string that itself sits inside an HTML `<style>` element. Dropping
+/// only `'` isn't enough: `<` would let a family name close the style element
+/// early (`</style><script>…`), and a raw newline or backslash can break out
+/// of the CSS string. Keep it to characters that can only ever be text.
+fn css_string_literal_body(family_name: &str) -> String {
+    family_name
+        .chars()
+        .filter(|c| !matches!(c, '\'' | '"' | '<' | '>' | '\\' | '{' | '}' | ';' | '&'))
+        .filter(|c| !c.is_control())
+        .collect()
+}
+
 /// Builds a `<style>` block declaring every one of the user's custom fonts as
 /// `@font-face` with the file base64-embedded as a `data:` URI. Used by
 /// export.rs, whose headless-Chromium sandbox refuses any request that isn't
@@ -259,7 +281,7 @@ pub async fn embed_account_fonts_style(state: &AppState, owner_id: &str) -> Stri
         };
         style.push_str(&format!(
             "@font-face{{font-family:'{}';src:url(data:{};base64,{}) format('{}');}}\n",
-            row.family_name.replace('\'', ""),
+            css_string_literal_body(&row.family_name),
             row.content_type,
             b64,
             format,
