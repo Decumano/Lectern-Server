@@ -1,4 +1,4 @@
-# OfficeSuite Web
+# Lectern Web
 
 A self-hosted, multi-user web port of [OfficeSuite](https://github.com/Decumano/OfficeSuite), a
 lightweight Markdown-based office suite originally built as a Tauri desktop app. This version
@@ -24,8 +24,8 @@ and exposes the API under `/api`. SQLite data and per-user workspaces are writte
 ## Running with Docker
 
 ```
-docker build -t officesuite-web .
-docker run -p 8080:8080 -v officesuite-data:/data officesuite-web
+docker build -t lectern-web .
+docker run -p 8080:8080 -v officesuite-data:/data lectern-web
 ```
 
 ### Running with docker-compose

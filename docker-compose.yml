@@ -1,7 +1,7 @@
 services:
-  officesuite-web:
+  lectern-web:
     build: .
-    image: officesuite-web:${TAG:-latest}
+    image: lectern-web:${TAG:-latest}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${HOST_PORT:-8080}:${PORT:-8080}"
@@ -16,6 +16,8 @@ services:
       GITHUB_RELEASES_TOKEN: ${GITHUB_RELEASES_TOKEN:-}
       PORT: ${PORT:-8080}
     volumes:
+      # Volume name kept as `officesuite-data` across the rename to Lectern so
+      # existing deployments keep their database and workspaces.
       - officesuite-data:/data
 
 volumes:

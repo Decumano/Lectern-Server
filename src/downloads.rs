@@ -62,7 +62,7 @@ impl Releases {
             .client
             .get(url)
             // GitHub rejects requests without a User-Agent.
-            .header(header::USER_AGENT, "officesuite-web")
+            .header(header::USER_AGENT, "lectern-web")
             .header(header::ACCEPT, accept);
         if let Some(token) = &self.token {
             req = req.bearer_auth(token);

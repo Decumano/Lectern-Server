@@ -10,7 +10,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
       chromium fonts-liberation fonts-noto-color-emoji fontconfig ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /app/target/release/officesuite-web ./officesuite-web
+COPY --from=build /app/target/release/lectern-web ./lectern-web
 COPY web ./web
 # Custom fonts for PDF export (headless Chromium, see src/export.rs) — TTF/OTF
 # only, fontconfig can't use WOFF/WOFF2. Baked into the image and cached at
@@ -26,4 +26,4 @@ ENV PORT=8080
 ENV CHROME=/usr/bin/chromium
 VOLUME ["/data"]
 EXPOSE 8080
-CMD ["./officesuite-web"]
+CMD ["./lectern-web"]

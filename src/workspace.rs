@@ -1,5 +1,5 @@
 // Workspace file CRUD, ported from the Tauri backend (src-tauri/src/lib.rs) in the
-// original OfficeSuite desktop app. There, `root` came straight from the client
+// original Lectern desktop app. There, `root` came straight from the client
 // because it was gated by an OS folder-picker dialog for a single local user. On
 // the web there is no such gate, so `root` is instead always derived from the
 // authenticated session (see `current_user_id`), and every relative path is

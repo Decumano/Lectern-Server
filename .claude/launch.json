@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "officesuite-web",
+      "name": "lectern-web",
       "runtimeExecutable": "cargo",
       "runtimeArgs": ["run"],
       "port": 8080

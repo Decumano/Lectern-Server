@@ -188,7 +188,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
-    tracing::info!("officesuite-web listening on http://0.0.0.0:{port}");
+    tracing::info!("lectern-web listening on http://0.0.0.0:{port}");
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
