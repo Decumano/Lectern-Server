@@ -61,13 +61,6 @@ bool contains(const std::array<std::string_view, 8> &haystack,
            haystack.end();
 }
 
-bool contains(const std::array<std::string_view, 2> &haystack,
-              std::string_view needle)
-{
-    return std::find(haystack.begin(), haystack.end(), needle) !=
-           haystack.end();
-}
-
 /// Total bytes stored under a workspace root. Walks the tree rather than
 /// tracking a running total in the DB: workspaces are small (text files) and
 /// this way the number can't drift out of sync with what's on disk.
@@ -278,10 +271,12 @@ json walk_work_dir(const fs::path &dir, const std::string &rel_prefix)
             continue;
         }
 
-        const bool is_root_sidecar =
-            rel_prefix.empty() && contains(kSyncSidecarFiles, name);
-        if (!contains(kWorkFileExtensions, util::extension_of(name)) &&
-            !is_root_sidecar)
+        // Every regular file is listed, not only the eight app formats. This
+        // listing is also what a sync client reads to learn remote state, so
+        // anything hidden here but present on disk looks deleted on the next
+        // pass -- and the client would dutifully remove its local copy.
+        // Dotfiles stay out: they are sync metadata, never user content.
+        if (!name.empty() && name.front() == '.')
         {
             continue;
         }
