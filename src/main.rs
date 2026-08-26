@@ -75,6 +75,14 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(256 * 1024 * 1024);
 
+    // Largest single work file the server will accept. The body is buffered
+    // in memory, so this bounds per-request memory as well; the per-account
+    // ceiling stays WORKSPACE_QUOTA_BYTES.
+    let max_work_file_bytes: usize = std::env::var("MAX_WORK_FILE_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(32 * 1024 * 1024);
+
     let state = AppState {
         db,
         workspaces_dir,
@@ -91,9 +99,19 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/logout", post(auth::logout))
         .route("/auth/me", get(auth::me))
         .route("/workspace", get(workspace::list_work_folder))
+        // Without an explicit limit this route inherits axum's 2MB default,
+        // which is far too small for what the app actually stores here: a
+        // .mdn notebook carries freehand ink, imported PDF pages and images,
+        // and passes 2MB routinely. The symptom was a 413 on the first sync
+        // of any workspace containing one — and because the desktop sync
+        // engine aborted the whole pass on the first rejected file, that one
+        // file made cloud sync unusable rather than merely incomplete.
+        // WORKSPACE_QUOTA_BYTES still bounds total usage per account.
         .route(
             "/workspace/file",
-            get(workspace::read_work_file).put(workspace::write_work_file),
+            get(workspace::read_work_file)
+                .put(workspace::write_work_file)
+                .layer(DefaultBodyLimit::max(max_work_file_bytes)),
         )
         .route("/workspace/stat", get(workspace::stat_work_file))
         .route("/workspace/folder", post(workspace::create_work_folder))

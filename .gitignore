@@ -6,3 +6,4 @@
 *.db-wal
 /.claude/*
 /.vscode/*
+docker-compose.yml
