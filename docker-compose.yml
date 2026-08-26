@@ -1,24 +1,34 @@
 services:
-  lectern-web:
-    build: .
-    image: lectern-web:${TAG:-latest}
-    restart: unless-stopped
+  lectern:
+    build:
+      context: .
+    image: lectern-server-cpp:${TAG:-latest}
     ports:
-      - "127.0.0.1:${HOST_PORT:-8080}:${PORT:-8080}"
+      - "${HOST_PORT:-8080}:${PORT:-8080}"
     environment:
-      # DATABASE_URL/WORKSPACES_DIR are intentionally not sourced from .env here: their defaults
-      # (baked into the image, see Dockerfile) already point inside the /data volume below. The
-      # DATABASE_URL/WORKSPACES_DIR values in .env are for local `cargo run` and use host-relative
-      # paths that don't apply inside the container.
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env}
+      # Compose refuses to start without this set — an unsigned session cookie
+      # is fine on a laptop, not on anything reachable.
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      PORT: ${PORT:-8080}
+      WORKSPACE_QUOTA_BYTES: ${WORKSPACE_QUOTA_BYTES:-268435456}
+      # Raised from axum's old 2MB default; a .mdn notebook passes that
+      # routinely and the first sync then failed with 413.
+      MAX_WORK_FILE_BYTES: ${MAX_WORK_FILE_BYTES:-33554432}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       DESKTOP_RELEASES_REPO: ${DESKTOP_RELEASES_REPO:-Decumano/OfficeSuite}
       GITHUB_RELEASES_TOKEN: ${GITHUB_RELEASES_TOKEN:-}
-      PORT: ${PORT:-8080}
+      THREADS: ${THREADS:-8}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
-      # Volume name kept as `officesuite-data` across the rename to Lectern so
-      # existing deployments keep their database and workspaces.
-      - officesuite-data:/data
+      # DATABASE_URL, WORKSPACES_DIR and FONTS_DIR keep their image defaults,
+      # which all point at /data — so state survives down/up cycles.
+      - lectern-data:/data
+    restart: unless-stopped
+    # PDF export runs Chromium, which wants more shared memory than
+    # Docker's 64MB default. --disable-dev-shm-usage covers this too;
+    # both together keep large exports off the failure path.
+    shm_size: 512m
 
 volumes:
-  officesuite-data:
+  lectern-data:

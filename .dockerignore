@@ -1,0 +1,43 @@
+# Everything here is sent to the Docker daemon before the build starts, so
+# keeping it small is the difference between a build that starts instantly and
+# one that spends a minute uploading a build tree it is about to rebuild
+# anyway.
+#
+# Two of these matter for more than speed: build/ carries SQLite databases from
+# local testing — real accounts, password hashes, workspace files — and .env
+# carries SESSION_SECRET. Neither belongs anywhere near an image that gets
+# distributed.
+
+# Local build trees. The image builds from source in its own stage.
+build/
+build-*/
+out/
+cmake-build-*/
+
+# Runtime state: databases, per-user workspaces, uploaded fonts.
+data/
+
+# Secrets and local configuration.
+.env
+*.pem
+*.key
+*.pfx
+
+# The frontend's own git metadata; the files themselves are needed.
+web/.git/
+.git/
+.gitmodules
+
+# Editor and OS noise.
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Logs and scratch output.
+*.log
+*.pack
+
+# Documentation is not needed to compile or run the server.
+README.md

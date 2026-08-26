@@ -1,0 +1,15 @@
+{
+  "name": "lectern-server-cpp",
+  "version": "0.1.0",
+  "description": "Self-hosted multi-user Lectern server (C++ port of Lectern-Server)",
+  "license": "AGPL-3.0-or-later",
+  "dependencies": [
+    "drogon",
+    "libsodium",
+    "nlohmann-json",
+    "cpr",
+    "spdlog",
+    "sqlite3",
+    "catch2"
+  ]
+}

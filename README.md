@@ -1,160 +1,146 @@
-# Lectern Web
+# Lectern Server (C++)
 
-A self-hosted, multi-user web port of [OfficeSuite](https://github.com/Decumano/OfficeSuite), a
-lightweight Markdown-based office suite originally built as a Tauri desktop app. This version
-replaces the Tauri/Rust desktop backend with a Rust web server (axum) and adds account-based auth
-so each user gets their own isolated workspace, since there's no OS folder-picker on the web.
+A C++ port of [Lectern-Server](../Lectern-Server) — the self-hosted, multi-user
+web version of Lectern. Same API, same database, same frontend; the Rust/axum
+backend is replaced by C++/Drogon.
 
-The frontend (`web/`) is forked from
-[officesuite-frontend](https://github.com/Decumano/officesuite-frontend) — the UI and editor logic
-(`main.js`) are unchanged; only `platform.js` was extended to talk to this server's HTTP API
-instead of Tauri's IPC, and a small login/register gate was added in front of the app.
+The frontend (`web/`) is untouched: it is the same `officesuite-frontend`
+submodule the Rust build and the desktop app use, and no file in it was
+modified for this port.
 
-## Running locally
+## Building
 
-```
-cp .env.example .env    # adjust SESSION_SECRET etc.
-cargo run
-```
+Needs a C++20 compiler, CMake ≥ 3.25 and vcpkg.
 
-The server listens on `http://localhost:8080` by default, serves the static frontend from `web/`,
-and exposes the API under `/api`. SQLite data and per-user workspaces are written to `data/`
-(gitignored) unless overridden via `DATABASE_URL` / `WORKSPACES_DIR`.
-
-## Running with Docker
-
-```
-docker build -t lectern-web .
-docker run -p 8080:8080 -v officesuite-data:/data lectern-web
+```bash
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 ```
 
-### Running with docker-compose
-
-```
-cp .env.example .env    # set SESSION_SECRET at minimum
-docker compose up -d --build
+```bash
+cmake --build build --config Release
 ```
 
-`docker-compose.yml` reads its settings from `.env` (via `${VAR}` substitution) so the container
-gets the same configuration as `cargo run` would:
+On Windows the Visual Studio generator with MSVC is what this was developed
+against:
 
-| Variable         | Default                            | Notes                                      |
-|-------------------|-------------------------------------|---------------------------------------------|
-| `SESSION_SECRET`  | *(required, no default)*            | Signs session cookies; at least 64 chars. Compose refuses to start without this set |
-| `COOKIE_SECURE`   | `false`                             | Set `true` once behind HTTPS so session cookies carry the Secure flag |
-| `HOST_PORT`       | `8080`                              | Host-side port mapping                      |
-| `PORT`            | `8080`                              | Port the server listens on, both on the host and inside the container |
-| `TAG`             | `latest`                            | Tag applied to the built image              |
+```bash
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=E:/vcpkg/scripts/buildsystems/vcpkg.cmake
+```
 
-`DATABASE_URL` and `WORKSPACES_DIR` aren't read from `.env` for the compose service — their
-image defaults (set in the `Dockerfile`) already point at `/data`, which is backed by the
-`officesuite-data` named volume, so data persists across `docker compose down`/`up` cycles.
-The `.env` values for those two are only used by local `cargo run`.
+## Running
 
-## API
+```bash
+cp .env.example .env
+```
 
-| Method | Path                  | Description                              |
-|--------|------------------------|-------------------------------------------|
-| POST   | `/api/auth/register`   | Create an account, starts a session       |
-| POST   | `/api/auth/login`      | Log in, starts a session                  |
-| POST   | `/api/auth/logout`     | Ends the session                          |
-| GET    | `/api/auth/me`         | Current user, or 401                      |
-| GET    | `/api/workspace`       | List the current user's files/folders     |
-| GET    | `/api/workspace/file`  | Read a file (`?path=`)                    |
-| PUT    | `/api/workspace/file`  | Write a file (`?path=`, raw body)         |
-| POST   | `/api/workspace/folder`| Create a folder (`{ relPath }`)           |
-| DELETE | `/api/workspace/entry` | Delete a file/folder (`?path=&isDir=`)    |
-| POST   | `/api/workspace/move`  | Move/rename (`{ from, to }`)              |
-| POST   | `/api/shares`          | Share a file/folder with another account (`{ relPath, isDir, email, permission }`, permission: `view`/`comment`/`edit`) |
-| GET    | `/api/shares`          | List who an entry is shared with (`?path=`) |
-| DELETE | `/api/shares/:id`      | Revoke a share (owner) or leave it (grantee) |
-| GET    | `/api/shared`          | Entries shared with the current user      |
-| GET    | `/api/shared/list`     | File tree of a folder share (`?share=`)   |
-| GET    | `/api/shared/file`     | Read a shared file (`?share=&path=`)      |
-| PUT    | `/api/shared/file`     | Write a shared file (edit permission; existing files only) |
-| POST   | `/api/links`           | Create a share link (`{ relPath, isDir, permission }`); returns the token |
-| GET    | `/api/links`           | List an entry's share links (`?path=`)    |
-| DELETE | `/api/links/:id`       | Revoke a share link (owner only)          |
-| GET    | `/api/link/:token`     | Link metadata — **no login needed**, the token is the authorization |
-| GET    | `/api/link/:token/list`| File tree of a folder link                |
-| GET/PUT| `/api/link/:token/file`| Read / write through a link (`?path=`; write needs an edit link) |
-| GET    | `/api/comments`        | Comments on a work file (`?path=` own, `?share=&subPath=` shared, or `?link=&subPath=` via link — the link form needs no login) |
-| GET    | `/api/fonts`           | List the current account's custom fonts   |
-| POST   | `/api/fonts`           | Upload a font (`?familyName=&filename=`, raw body; .ttf/.otf/.woff/.woff2, 5MB max, 30 fonts max) |
-| GET    | `/api/fonts/:id`       | Raw font bytes (owner only)               |
-| DELETE | `/api/fonts/:id`       | Delete a font                             |
-| POST   | `/api/comments`        | Add a comment (comment/edit permission; any work file; optional `anchor` JSON pins it to a text range / cell range / item) |
-| DELETE | `/api/comments/:id`    | Delete a comment (author or file owner)   |
+Then run the binary from a directory containing `web/` and `migrations/`, or
+point `WEB_DIR` and `MIGRATIONS_DIR` at them. The server listens on
+`http://localhost:8080`, serves the frontend, and exposes the API under `/api`.
+SQLite data and per-user workspaces are written to `data/`.
 
-Every workspace endpoint scopes reads/writes to `data/workspaces/<user_id>/`, derived from the
-session — never from client input — and rejects any relative path that tries to escape that
-directory (no `..`, no absolute paths).
+### The frontend
 
-## Environment variables
+The server serves `web/`, the same `officesuite-frontend` submodule the desktop
+app uses. In a clone that has it registered:
 
-See `.env.example`: `DATABASE_URL`, `SESSION_SECRET`, `PORT`, `WORKSPACES_DIR`, `COOKIE_SECURE`.
+```bash
+git submodule update --init --recursive
+```
 
-## Desktop app downloads
+**This directory is not a git repository yet**, so that command has nothing to
+act on and the `.gitmodules` file here stays inert until it is one. Either
+initialise it:
 
-The login gate links to `/download.html`, which lists the installers and portable
-builds attached to the latest GitHub Release of the repo named by
-`DESKTOP_RELEASES_REPO` (default [Decumano/OfficeSuite](https://github.com/Decumano/OfficeSuite/releases)).
-Releases are produced by that repo's `release.yml` workflow — push a `v*` tag there
-and the downloads show up here automatically; nothing on this server needs redeploying.
+```bash
+git init && git submodule add https://github.com/Decumano/officesuite-frontend.git web
+```
 
-The page asks this server first (`/api/downloads/latest`), which lists the release
-and streams the assets itself — required while the releases repo is **private**,
-since browsers can't reach it directly. Set `GITHUB_RELEASES_TOKEN` to a fine-grained
-PAT with *Contents: Read-only* on that repo (the token stays server-side). If the
-repo is public, the token is unnecessary and the page can also fall back to calling
-the GitHub API from the browser.
+…or skip the submodule and point the server at a checkout you already have —
+the frontend is identical in every copy:
 
-## Custom fonts
+```bash
+WEB_DIR=../Lectern-Server/web ./build/Release/lectern-server
+```
 
-Settings &rarr; Custom fonts lets each account upload font files (TTF/OTF/WOFF/WOFF2) that then render
-the same way for everyone who opens that account's documents — in the live editor/preview and in
-exported PDFs — regardless of what's installed on the visitor's machine or this server's container.
+Docker works the same way as the Rust build — `docker compose up -d --build`,
+with `SESSION_SECRET` set in `.env`.
 
-This is deliberately separate from the font *picker*'s `queryLocalFonts()` path (which lists fonts
-already on the visitor's own device): that browser API only exists in a secure context (HTTPS, or
-literally `localhost`) and only in Chromium, so it silently contributes nothing on a plain-HTTP
-deployment. Uploaded fonts don't have that limitation — they're served as ordinary HTTP assets, so
-`@font-face` works in any browser over any origin. PDF export (headless Chromium, sandboxed to only
-`file://`/`data:` requests — see `src/export.rs`) gets the account's fonts base64-embedded directly
-into the exported HTML, since that sandbox can't fetch them any other way.
+## Tests
 
-Installing fonts into the server's own OS/container (e.g. via `fonts/` + the Dockerfile) is a
-separate, optional mechanism that only affects PDF export's system-font fallback — it does **not**
-make a font available in the live editor, since that runs entirely in each visitor's own browser.
+```bash
+./build/Release/lectern-tests
+```
 
-## Security notes
+## What changed, and why
 
-- `SESSION_SECRET` (≥ 64 chars) signs session cookies; without it the server runs with
-  unsigned cookies and logs a warning (fine for local dev only).
-- Login failures and registrations are rate-limited per client IP (10 failed logins / 15 min,
-  20 registrations / hour). Successful logins are never counted, so many users behind one
-  proxy IP won't lock each other out.
-- Desktop clients authenticate with `Authorization: Bearer <apiToken>` (returned by
-  login/register); browsers use the session cookie.
+The API surface, status codes, JSON field names, rate limits, quotas and path
+validation are all ports rather than redesigns. Five things did have to change.
 
-## License
+**The database layer is synchronous.** sqlx's async pool has no C++ equivalent
+worth the complexity here: Drogon's ORM needs the framework rebuilt with its
+`orm`+`sqlite3` features, and every handler in this application already blocks
+on filesystem I/O anyway. `src/db.cpp` wraps the SQLite C API behind one mutex,
+and `setThreadNum` gives Drogon a pool to absorb the blocking. SQLite is a local
+file; a query is microseconds, not a network round trip.
 
-**AGPLv3** — see [LICENSE](LICENSE).
+**Migrations are applied at runtime.** sqlx's `migrate!` macro embeds them at
+compile time. Here `Db::run_migrations` reads `migrations/*.sql` in filename
+order at startup and records what it applied in a `_migrations` table. The seven
+existing migration files are byte-identical to the Rust build's.
 
-The server is licensed more strictly than the rest of the suite on purpose. Under plain
-GPLv3, running a modified copy as a public service is not distribution, so the operator
-would owe nobody their changes. AGPLv3 section 13 closes that: **if you run a modified
-version of this server and let other people use it over a network, those users must be
-offered its Corresponding Source.** Running it unmodified, or privately, triggers no such
-obligation.
+**Sessions moved into a table this codebase owns.** Drogon's built-in sessions
+live in process memory, which would sign every user out on restart. `0008_sessions.sql`
+adds a `sessions` table and `src/session.cpp` implements the same contract
+tower-sessions provided: HMAC-signed cookies, 30-day sliding expiry,
+`SameSite=Strict`, `Secure` behind `COOKIE_SECURE`.
 
-The frontend in `web/` is the
-[officesuite-frontend](https://github.com/Decumano/officesuite-frontend) submodule and
-stays GPLv3, as does the [OfficeSuite](https://github.com/Decumano/OfficeSuite) desktop
-app. The two licenses are explicitly compatible — AGPLv3 §13 and GPLv3 §13 each permit
-linking with the other — and combining them gives a whole that is conveyed under AGPLv3.
-In practice: if you modify `web/` and deploy it here, publish those frontend changes too.
+**Existing password hashes still work.** libsodium's `crypto_pwhash_str_verify`
+parses the Argon2id parameters out of the stored PHC string, so accounts created
+by the Rust server log in unchanged. New hashes use libsodium's interactive
+parameters rather than the `argon2` crate's defaults.
 
-Third-party libraries vendored into the frontend keep their own licenses, listed in
-`web/THIRD-PARTY-NOTICES.md`. File formats served by this API are documented in
-[web/FLAVOR.md](web/FLAVOR.md).
+**Release-asset downloads are buffered, not streamed.** The Rust build piped
+GitHub's response body straight through. Drogon's async streams are driven from
+the event loop while cpr's write callback runs on a worker thread, and bridging
+the two safely needs a hand-written handshake for no real gain — desktop
+installers are single-digit megabytes. `DOWNLOAD_MAX_BYTES` (default 256 MB)
+bounds it explicitly.
+
+### PDF export
+
+`/api/export/pdf` still drives a headless Chromium over the DevTools Protocol,
+and still locks the tab down the same way: JS execution disabled outright, and a
+`Fetch`-domain interceptor that allowlists only `file://` and `data:` so the
+visitor-authored export HTML cannot be used for SSRF. There is no C++ equivalent
+of the `headless_chrome` crate, so `src/export.cpp` speaks CDP directly over a
+WebSocket (Drogon's `WebSocketClient` on a dedicated event loop). That was worth
+doing rather than falling back to `chrome --print-to-pdf`, which would lose both
+the script lockdown and the request allowlist.
+
+**On Windows this needs Google Chrome, not Edge.** Edge's DevTools port binds
+and reports as `LISTENING`, but Windows' AppContainer isolation refuses loopback
+connections to it from another process — every attach fails after a stuck
+`SYN_RECEIVED`. `find_browser` deliberately does not list Edge so the failure is
+"no browser found" rather than a confusing timeout. Set `CHROME_PATH` if Chrome
+is somewhere non-standard.
+
+This is the one endpoint that could not be exercised end-to-end during the port:
+the development machine had only Edge installed. Everything else below was.
+
+## Verified
+
+Against a live build, with the frontend submodule from the Rust checkout:
+
+- All 8 migrations apply to a fresh database
+- Register, login, `/me`, logout, and session invalidation after logout
+- Bearer-token auth (the desktop app's path) accepted; a bad token rejected
+- Workspace write / list / read / stat / move / delete
+- Path traversal (`../../etc/passwd`) rejected as `invalid path`
+- Deletion tombstones recorded on delete and on move, cleared on rewrite
+- Share links: create, anonymous metadata, anonymous read, anonymous write
+  refused at `view`/`comment` level
+- Anonymous comments through a comment link, visible to the owner
+- Font upload rejecting bad extensions and CSS-injection family names
+- `Cache-Control: no-cache` on HTML, `max-age=3600` on assets, nothing on `/api`
+- SPA fallback serving `index.html` at 200 for unmatched routes
+- 58 unit assertions (email validation, base64 vectors, path validation)

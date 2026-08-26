@@ -1,9 +1,19 @@
+# CMake build trees. The container and CI build from source in their own stage.
+build/
+build-*/
+
+# Leftover from the Rust version; safe to delete to reclaim disk.
 /target
+
+# Runtime state: databases, per-user workspaces, uploaded fonts.
 /data
-.env
 *.db
 *.db-shm
 *.db-wal
+
+# Secrets and local configuration.
+.env
+
+# Editor and tooling.
 /.claude/*
 /.vscode/*
-docker-compose.yml
