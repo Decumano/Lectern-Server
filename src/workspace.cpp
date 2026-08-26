@@ -412,7 +412,11 @@ void register_routes()
                     return http::text_response(*content);
                 }
 
-                const std::string content(req->getBody());
+                // A view, not a copy: Drogon already holds the whole
+                // body in memory, and copying it doubled the peak cost
+                // of every upload -- which matters once
+                // MAX_WORK_FILE_BYTES is raised for large attachments.
+                const std::string_view content = req->getBody();
                 // Drogon's body limit is global and has to accommodate PDF
                 // export, so the per-file ceiling is enforced here.
                 if (content.size() > max_work_file_bytes())
