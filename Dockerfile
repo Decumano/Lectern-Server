@@ -98,9 +98,12 @@ RUN useradd --system --create-home --uid 10001 lectern \
     && chown -R lectern:lectern /data /app
 USER lectern
 
-ENV DATABASE_URL=sqlite:///data/officesuite.db \
-    WORKSPACES_DIR=/data/workspaces \
-    FONTS_DIR=/data/fonts \
+# DATA_DIR is the single knob for where state lands: the database, the
+# workspaces and the fonts all derive from it, and /data is the volume
+# declared below. DATABASE_URL/WORKSPACES_DIR/FONTS_DIR are deliberately
+# left unset so an operator can still override any one of them from
+# compose without having to restate the other two.
+ENV DATA_DIR=/data \
     MIGRATIONS_DIR=/app/migrations \
     WEB_DIR=/app/web \
     CHROME_PATH=/usr/bin/chromium \

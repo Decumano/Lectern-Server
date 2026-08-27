@@ -36,7 +36,19 @@ cp .env.example .env
 Then run the binary from a directory containing `web/` and `migrations/`, or
 point `WEB_DIR` and `MIGRATIONS_DIR` at them. The server listens on
 `http://localhost:8080`, serves the frontend, and exposes the API under `/api`.
-SQLite data and per-user workspaces are written to `data/`.
+SQLite data, per-user workspaces and uploaded fonts are written under `data/`,
+relative to the directory the server runs from. `DATA_DIR` moves all three at
+once:
+
+```bash
+DATA_DIR=/var/lib/lectern ./build/Release/lectern-server
+```
+
+`DATABASE_URL`, `WORKSPACES_DIR` and `FONTS_DIR` still override individually
+when the database and the workspaces belong on different disks. The server
+logs the paths it resolved at startup. Under Docker the container always
+writes to `/data`; set `LECTERN_DATA` in `.env` to bind that to a host
+directory instead of the named volume.
 
 ### The frontend
 

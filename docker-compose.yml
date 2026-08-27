@@ -21,9 +21,12 @@ services:
       THREADS: ${THREADS:-8}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
-      # DATABASE_URL, WORKSPACES_DIR and FONTS_DIR keep their image defaults,
-      # which all point at /data — so state survives down/up cycles.
-      - lectern-data:/data
+      # The container always stores under /data (DATA_DIR in the image), so
+      # state survives down/up cycles. What that maps to on the host is the
+      # .env's call: LECTERN_DATA unset keeps the managed named volume, and
+      # setting it to a path — LECTERN_DATA=/srv/lectern-data — makes this a
+      # bind mount to that directory instead.
+      - ${LECTERN_DATA:-lectern-data}:/data
     restart: unless-stopped
     # PDF export runs Chromium, which wants more shared memory than
     # Docker's 64MB default. --disable-dev-shm-usage covers this too;

@@ -89,11 +89,20 @@ int main()
 
         auto &st = state();
 
-        const std::string database_url =
-            util::env_or("DATABASE_URL", "sqlite://data/officesuite.db");
-        st.workspaces_dir =
-            fs::path(util::env_or("WORKSPACES_DIR", "data/workspaces"));
-        st.fonts_dir = fs::path(util::env_or("FONTS_DIR", "data/fonts"));
+        // Everything this server persists lives under one root, so a
+        // deployment can move its state to another disk with a single
+        // setting. DATABASE_URL, WORKSPACES_DIR and FONTS_DIR still win when
+        // set explicitly — they only fall back to DATA_DIR — which keeps
+        // existing .env files, and the paths baked into older images,
+        // working unchanged.
+        const fs::path data_dir = fs::path(util::env_or("DATA_DIR", "data"));
+
+        const std::string database_url = util::env_or(
+            "DATABASE_URL", "sqlite://" + (data_dir / "officesuite.db").generic_string());
+        st.workspaces_dir = fs::path(
+            util::env_or("WORKSPACES_DIR", (data_dir / "workspaces").string()));
+        st.fonts_dir =
+            fs::path(util::env_or("FONTS_DIR", (data_dir / "fonts").string()));
         const auto port =
             static_cast<uint16_t>(util::env_i64("PORT", 8080));
         const fs::path web_root = fs::path(util::env_or("WEB_DIR", "web"));
@@ -194,6 +203,12 @@ int main()
 
         drogon::app()
             .setDocumentRoot(web_root.string())
+            // No handler here parses multipart bodies, but drogon creates its
+            // upload scratch tree at startup regardless — in the working
+            // directory, which left an `uploads/` beside the binary. Keeping
+            // it under DATA_DIR means every directory this process creates
+            // lives in the one place an operator configured.
+            .setUploadPath((data_dir / "uploads").string())
             .setLogLevel(trantor::Logger::kWarn)
             // Every handler does blocking filesystem and SQLite work (see
             // db.h); the pool is what keeps one slow write from stalling
@@ -210,6 +225,11 @@ int main()
             .addListener("0.0.0.0", port);
 
         spdlog::info("lectern-server listening on http://0.0.0.0:{}", port);
+        // Worth one line at startup: a mistyped DATA_DIR otherwise looks like
+        // an empty instance rather than a misconfigured one.
+        spdlog::info("storing workspaces in {} and fonts in {}",
+                     fs::absolute(st.workspaces_dir).string(),
+                     fs::absolute(st.fonts_dir).string());
         drogon::app().run();
         return 0;
     }
