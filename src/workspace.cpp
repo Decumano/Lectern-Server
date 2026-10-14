@@ -54,7 +54,8 @@ uint64_t modified_ms(const fs::path &path)
     return millis < 0 ? 0 : static_cast<uint64_t>(millis);
 }
 
-bool contains(const std::array<std::string_view, 8> &haystack,
+template <size_t N>
+bool contains(const std::array<std::string_view, N> &haystack,
               std::string_view needle)
 {
     return std::find(haystack.begin(), haystack.end(), needle) !=
