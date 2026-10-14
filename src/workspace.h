@@ -17,8 +17,8 @@
 
 namespace lectern::workspace {
 
-inline constexpr std::array<std::string_view, 8> kWorkFileExtensions = {
-    "mdp", "mds", "mdg", "mdn", "mdl", "mdc", "mde", "mdb"};
+inline constexpr std::array<std::string_view, 9> kWorkFileExtensions = {
+    "mdp", "mds", "mdg", "mdn", "mdl", "mdc", "mde", "mdb", "mdd"};
 
 /// Root-level sidecar files that sync clients need to see in listings (with a
 /// hash) even though they aren't work files: the user's custom document

@@ -111,7 +111,7 @@ TEST_CASE("safe_rel_path refuses anything that could escape the root",
     REQUIRE_THROWS_AS(workspace::safe_rel_path("."), AppError);
 }
 
-TEST_CASE("is_work_file recognises exactly the eight app extensions",
+TEST_CASE("is_work_file recognises exactly the nine app extensions",
           "[workspace]")
 {
     for (const auto ext : workspace::kWorkFileExtensions)

@@ -271,7 +271,7 @@ json walk_work_dir(const fs::path &dir, const std::string &rel_prefix)
             continue;
         }
 
-        // Every regular file is listed, not only the eight app formats. This
+        // Every regular file is listed, not only the app formats. This
         // listing is also what a sync client reads to learn remote state, so
         // anything hidden here but present on disk looks deleted on the next
         // pass -- and the client would dutifully remove its local copy.
