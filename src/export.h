@@ -28,8 +28,8 @@ namespace lectern::pdf_export {
 
 /// Starts the dedicated event loop the CDP WebSocket runs on. Call once from
 /// main() before serving.
-void init();
+void fInit();
 
-void register_routes();
+void fRegisterRoutes();
 
 }  // namespace lectern::pdf_export

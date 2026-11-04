@@ -19,26 +19,26 @@ namespace lectern {
 class Releases
 {
   public:
-    static std::shared_ptr<Releases> from_env();
+    static std::shared_ptr<Releases> fFromEnv();
 
-    const std::string &repo() const
+    const std::string &fRepo() const
     {
         return repo_;
     }
 
-    const std::optional<std::string> &token() const
+    const std::optional<std::string> &fToken() const
     {
         return token_;
     }
 
     /// The cached listing when it is still fresh.
-    std::optional<nlohmann::json> cached();
-    void store(nlohmann::json view);
+    std::optional<nlohmann::json> fCached();
+    void fStore(nlohmann::json view);
 
   private:
     /// How long a fetched release listing is served from memory before asking
     /// GitHub again. Keeps a busy download page to ~12 API calls per hour.
-    static constexpr std::chrono::seconds kCacheTtl{300};
+    static constexpr std::chrono::seconds cCacheTtl{300};
 
     std::string repo_;
     std::optional<std::string> token_;
@@ -50,7 +50,7 @@ class Releases
 
 namespace downloads {
 
-void register_routes();
+void fRegisterRoutes();
 
 }  // namespace downloads
 }  // namespace lectern

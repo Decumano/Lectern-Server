@@ -11,13 +11,13 @@ namespace lectern::session {
 
 namespace {
 
-constexpr int64_t kInactivitySeconds =
-    static_cast<int64_t>(kInactivityDays) * 24 * 60 * 60;
+constexpr int64_t cInactivitySeconds =
+    static_cast<int64_t>(cInactivityDays) * 24 * 60 * 60;
 
 /// HMAC-SHA256 of the session id under SESSION_SECRET, hex-encoded.
-std::string sign(const std::string &session_id)
+std::string fSign(const std::string &session_id)
 {
-    const std::string &secret = state().session_secret;
+    const std::string &secret = fState().session_secret;
     std::array<unsigned char, crypto_auth_hmacsha256_BYTES> mac{};
 
     // The secret is arbitrary-length text; HMAC wants a fixed-size key, so
@@ -47,15 +47,15 @@ std::string sign(const std::string &session_id)
 
 /// Extracts the session id from the cookie, verifying the signature when one
 /// is configured. Returns nullopt for a missing, malformed or forged cookie.
-std::optional<std::string> id_from_cookie(const drogon::HttpRequestPtr &req)
+std::optional<std::string> fIdFromCookie(const drogon::HttpRequestPtr &req)
 {
-    const std::string raw = req->getCookie(kCookieName);
+    const std::string raw = req->getCookie(cCookieName);
     if (raw.empty())
     {
         return std::nullopt;
     }
 
-    const bool signed_cookies = !state().session_secret.empty();
+    const bool signed_cookies = !fState().session_secret.empty();
     const size_t dot = raw.find('.');
 
     if (!signed_cookies)
@@ -72,19 +72,19 @@ std::optional<std::string> id_from_cookie(const drogon::HttpRequestPtr &req)
 
     const std::string id = raw.substr(0, dot);
     const std::string mac = raw.substr(dot + 1);
-    if (id.empty() || !util::constant_time_equals(mac, sign(id)))
+    if (id.empty() || !util::fConstantTimeEquals(mac, fSign(id)))
     {
         return std::nullopt;
     }
     return id;
 }
 
-drogon::Cookie make_cookie(const std::string &value, int max_age_seconds)
+drogon::Cookie fMakeCookie(const std::string &value, int max_age_seconds)
 {
-    drogon::Cookie cookie(kCookieName, value);
+    drogon::Cookie cookie(cCookieName, value);
     cookie.setPath("/");
     cookie.setHttpOnly(true);
-    cookie.setSecure(state().cookie_secure);
+    cookie.setSecure(fState().cookie_secure);
     // Strict is what tower-sessions defaulted to, and what the desktop app's
     // bearer-token path exists to work around — see auth.cpp.
     cookie.setSameSite(drogon::Cookie::SameSite::kStrict);
@@ -94,16 +94,16 @@ drogon::Cookie make_cookie(const std::string &value, int max_age_seconds)
 
 }  // namespace
 
-std::optional<std::string> current_user_id(const drogon::HttpRequestPtr &req)
+std::optional<std::string> fCurrentUserId(const drogon::HttpRequestPtr &req)
 {
-    const auto id = id_from_cookie(req);
+    const auto id = fIdFromCookie(req);
     if (!id)
     {
         return std::nullopt;
     }
 
-    auto &db = *state().db;
-    const auto row = db.query_one(
+    auto &db = *fState().db;
+    const auto row = db.fQueryOne(
         "SELECT user_id, expires_at FROM sessions WHERE id = ?",
         {DbValue(*id)});
     if (!row)
@@ -111,49 +111,49 @@ std::optional<std::string> current_user_id(const drogon::HttpRequestPtr &req)
         return std::nullopt;
     }
 
-    const int64_t now = util::now_s();
-    if (row->i64(1) <= now)
+    const int64_t now = util::fNowS();
+    if (row->fI64(1) <= now)
     {
-        db.execute("DELETE FROM sessions WHERE id = ?", {DbValue(*id)});
+        db.fExecute("DELETE FROM sessions WHERE id = ?", {DbValue(*id)});
         return std::nullopt;
     }
 
     // Sliding expiry, matching Expiry::OnInactivity in the Rust server.
-    db.execute("UPDATE sessions SET expires_at = ? WHERE id = ?",
-               {DbValue(now + kInactivitySeconds), DbValue(*id)});
+    db.fExecute("UPDATE sessions SET expires_at = ? WHERE id = ?",
+               {DbValue(now + cInactivitySeconds), DbValue(*id)});
 
-    return row->text(0);
+    return row->fText(0);
 }
 
-drogon::Cookie start(const std::string &user_id)
+drogon::Cookie fStart(const std::string &user_id)
 {
-    const std::string id = util::random_hex(32);
+    const std::string id = util::fRandomHex(32);
 
-    state().db->execute(
+    fState().db->fExecute(
         "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)",
         {DbValue(id),
          DbValue(user_id),
-         DbValue(util::now_s() + kInactivitySeconds)});
+         DbValue(util::fNowS() + cInactivitySeconds)});
 
     const std::string value =
-        state().session_secret.empty() ? id : id + "." + sign(id);
-    return make_cookie(value, static_cast<int>(kInactivitySeconds));
+        fState().session_secret.empty() ? id : id + "." + fSign(id);
+    return fMakeCookie(value, static_cast<int>(cInactivitySeconds));
 }
 
-drogon::Cookie destroy(const drogon::HttpRequestPtr &req)
+drogon::Cookie fDestroy(const drogon::HttpRequestPtr &req)
 {
-    if (const auto id = id_from_cookie(req))
+    if (const auto id = fIdFromCookie(req))
     {
-        state().db->execute("DELETE FROM sessions WHERE id = ?",
+        fState().db->fExecute("DELETE FROM sessions WHERE id = ?",
                             {DbValue(*id)});
     }
-    return make_cookie("", 0);
+    return fMakeCookie("", 0);
 }
 
-void purge_expired()
+void fPurgeExpired()
 {
-    state().db->execute("DELETE FROM sessions WHERE expires_at <= ?",
-                        {DbValue(util::now_s())});
+    fState().db->fExecute("DELETE FROM sessions WHERE expires_at <= ?",
+                        {DbValue(util::fNowS())});
 }
 
 }  // namespace lectern::session

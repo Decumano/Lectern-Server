@@ -43,25 +43,25 @@ namespace lectern::pdf_export {
 
 namespace {
 
-constexpr auto kRenderTimeout = 30s;
+constexpr auto cRenderTimeout = 30s;
 
 /// Each render launches a whole Chromium process, so unbounded concurrency is
 /// a trivial way to exhaust the server's RAM and CPU. Requests queue for one
 /// of a few slots instead, and give up rather than pile up if the queue
 /// doesn't clear.
-constexpr int kMaxConcurrentRenders = 2;
-constexpr auto kQueueTimeout = 60s;
+constexpr int cMaxConcurrentRenders = 2;
+constexpr auto cQueueTimeout = 60s;
 
-std::counting_semaphore<kMaxConcurrentRenders> &render_slots()
+std::counting_semaphore<cMaxConcurrentRenders> &fRenderSlots()
 {
-    static std::counting_semaphore<kMaxConcurrentRenders> slots(
-        kMaxConcurrentRenders);
+    static std::counting_semaphore<cMaxConcurrentRenders> slots(
+        cMaxConcurrentRenders);
     return slots;
 }
 
 /// The CDP WebSocket lives on its own event loop so a render thread can block
 /// on a reply without deadlocking the loop that is delivering it.
-trantor::EventLoopThread &cdp_loop()
+trantor::EventLoopThread &fCdpLoop()
 {
     static trantor::EventLoopThread loop_thread("lectern-cdp");
     return loop_thread;
@@ -69,9 +69,9 @@ trantor::EventLoopThread &cdp_loop()
 
 // ── Locating and running Chromium ──
 
-std::string find_browser()
+std::string fFindBrowser()
 {
-    if (const auto configured = util::env("CHROME_PATH"))
+    if (const auto configured = util::fEnv("CHROME_PATH"))
     {
         if (!configured->empty())
         {
@@ -79,7 +79,7 @@ std::string find_browser()
         }
     }
 
-    static const std::vector<std::string> kCandidates = {
+    static const std::vector<std::string> cCandidates = {
 #ifdef _WIN32
         // Chrome only. Microsoft Edge is deliberately not listed: its
         // DevTools port binds and shows as LISTENING, but Windows'
@@ -102,7 +102,7 @@ std::string find_browser()
 #endif
     };
 
-    for (const auto &candidate : kCandidates)
+    for (const auto &candidate : cCandidates)
     {
         std::error_code ec;
         if (fs::is_regular_file(candidate, ec) && !ec)
@@ -111,7 +111,7 @@ std::string find_browser()
         }
     }
 
-    throw AppError::internal(
+    throw AppError::fInternal(
         "no Chromium found for PDF export; set CHROME_PATH");
 }
 
@@ -176,20 +176,20 @@ class ChildProcess
                         environ) != 0)
         {
             pid_ = -1;
-            throw AppError::internal("failed to start the PDF renderer");
+            throw AppError::fInternal("failed to start the PDF renderer");
         }
 #endif
     }
 
     ~ChildProcess()
     {
-        kill();
+        fKill();
     }
 
     ChildProcess(const ChildProcess &) = delete;
     ChildProcess &operator=(const ChildProcess &) = delete;
 
-    void kill()
+    void fKill()
     {
 #ifdef _WIN32
         if (handle_ != nullptr)
@@ -229,10 +229,10 @@ class CdpSession
 {
   public:
     /// Connects to `ws://127.0.0.1:<port><path>`, giving up after `timeout`.
-    void connect(uint16_t port, const std::string &path, std::chrono::seconds timeout)
+    void fConnect(uint16_t port, const std::string &path, std::chrono::seconds timeout)
     {
         client_ = drogon::WebSocketClient::newWebSocketClient(
-            "127.0.0.1", port, false, cdp_loop().getLoop());
+            "127.0.0.1", port, false, fCdpLoop().getLoop());
 
         client_->setMessageHandler(
             [this](std::string &&message,
@@ -240,7 +240,7 @@ class CdpSession
                    const drogon::WebSocketMessageType &type) {
                 if (type == drogon::WebSocketMessageType::Text)
                 {
-                    on_message(message);
+                    fOnMessage(message);
                 }
             });
 
@@ -267,15 +267,15 @@ class CdpSession
         if (connected_future.wait_for(timeout) != std::future_status::ready ||
             !connected_future.get())
         {
-            throw AppError::internal("could not attach to the PDF renderer");
+            throw AppError::fInternal("could not attach to the PDF renderer");
         }
     }
 
     /// Sends a command and blocks until its reply arrives.
-    json call(const std::string &method,
+    json fCall(const std::string &method,
               json params = json::object(),
               const std::string &session_id = {},
-              std::chrono::seconds timeout = kRenderTimeout)
+              std::chrono::seconds timeout = cRenderTimeout)
     {
         int id = 0;
         {
@@ -283,7 +283,7 @@ class CdpSession
             id = next_id_++;
         }
 
-        send(id, method, std::move(params), session_id);
+        fSend(id, method, std::move(params), session_id);
 
         std::unique_lock<std::mutex> lock(mutex_);
         const bool arrived = condition_.wait_for(lock, timeout, [&] {
@@ -293,7 +293,7 @@ class CdpSession
         const auto it = responses_.find(id);
         if (!arrived || it == responses_.end())
         {
-            throw AppError::internal("PDF renderer stopped responding");
+            throw AppError::fInternal("PDF renderer stopped responding");
         }
 
         json response = std::move(it->second);
@@ -302,7 +302,7 @@ class CdpSession
 
         if (response.contains("error"))
         {
-            throw AppError::internal(
+            throw AppError::fInternal(
                 "PDF renderer rejected " + method + ": " +
                 response["error"].value("message", "unknown error"));
         }
@@ -310,7 +310,7 @@ class CdpSession
     }
 
     /// Waits for a protocol event, e.g. Page.loadEventFired.
-    void wait_for_event(const std::string &method,
+    void fWaitForEvent(const std::string &method,
                         std::chrono::seconds timeout)
     {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -319,20 +319,20 @@ class CdpSession
         });
         if (!arrived || seen_events_.count(method) == 0)
         {
-            throw AppError::internal("the page never finished loading");
+            throw AppError::fInternal("the page never finished loading");
         }
     }
 
     /// Session id for the attached page target; set once attached so the
     /// request interceptor can answer events on its own.
-    void set_session_id(std::string session_id)
+    void fSetSessionId(std::string session_id)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         page_session_id_ = std::move(session_id);
     }
 
   private:
-    void send(int id,
+    void fSend(int id,
               const std::string &method,
               json params,
               const std::string &session_id)
@@ -347,12 +347,12 @@ class CdpSession
         auto connection = client_->getConnection();
         if (!connection || !connection->connected())
         {
-            throw AppError::internal("PDF renderer connection is gone");
+            throw AppError::fInternal("PDF renderer connection is gone");
         }
         connection->send(payload);
     }
 
-    void on_message(const std::string &message)
+    void fOnMessage(const std::string &message)
     {
         auto parsed = json::parse(message, nullptr, false);
         if (parsed.is_discarded() || !parsed.is_object())
@@ -371,7 +371,7 @@ class CdpSession
         const std::string method = parsed.value("method", "");
         if (method == "Fetch.requestPaused")
         {
-            handle_paused_request(parsed);
+            fHandlePausedRequest(parsed);
             return;
         }
 
@@ -384,7 +384,7 @@ class CdpSession
     /// inlined `data:` URIs are allowed through; everything else — http(s),
     /// ws, IP literals, anything Chromium would otherwise dial out to — is
     /// failed before a connection is opened.
-    void handle_paused_request(const json &event)
+    void fHandlePausedRequest(const json &event)
     {
         const auto &params = event["params"];
         const std::string request_id = params.value("requestId", "");
@@ -394,8 +394,8 @@ class CdpSession
                 : std::string{};
         const std::string session_id = event.value("sessionId", "");
 
-        const bool allowed = util::starts_with(url, "file://") ||
-                             util::starts_with(url, "data:");
+        const bool allowed = util::fStartsWith(url, "file://") ||
+                             util::fStartsWith(url, "data:");
 
         int id = 0;
         {
@@ -407,7 +407,7 @@ class CdpSession
         {
             if (allowed)
             {
-                send(id,
+                fSend(id,
                      "Fetch.continueRequest",
                      json{{"requestId", request_id}},
                      session_id);
@@ -415,7 +415,7 @@ class CdpSession
             else
             {
                 spdlog::debug("PDF export blocked a request to {}", url);
-                send(id,
+                fSend(id,
                      "Fetch.failRequest",
                      json{{"requestId", request_id},
                           {"errorReason", "BlockedByClient"}},
@@ -441,7 +441,7 @@ class CdpSession
 
 /// Chromium writes `<user-data-dir>/DevToolsActivePort` once it is listening:
 /// port on the first line, browser WebSocket path on the second.
-std::pair<uint16_t, std::string> wait_for_devtools_port(
+std::pair<uint16_t, std::string> fWaitForDevtoolsPort(
     const fs::path &user_data_dir,
     std::chrono::seconds timeout)
 {
@@ -450,16 +450,16 @@ std::pair<uint16_t, std::string> wait_for_devtools_port(
 
     while (std::chrono::steady_clock::now() < deadline)
     {
-        if (const auto contents = util::read_file(port_file))
+        if (const auto contents = util::fReadFile(port_file))
         {
-            const auto lines = util::split(*contents, '\n');
+            const auto lines = util::fSplit(*contents, '\n');
             if (lines.size() >= 2)
             {
                 try
                 {
                     const auto port = static_cast<uint16_t>(
-                        std::stoi(util::trim(lines[0])));
-                    const std::string path = util::trim(lines[1]);
+                        std::stoi(util::fTrim(lines[0])));
+                    const std::string path = util::fTrim(lines[1]);
                     if (port != 0 && !path.empty())
                     {
                         return {port, path};
@@ -474,7 +474,7 @@ std::pair<uint16_t, std::string> wait_for_devtools_port(
         std::this_thread::sleep_for(50ms);
     }
 
-    throw AppError::internal("the PDF renderer never became ready");
+    throw AppError::fInternal("the PDF renderer never became ready");
 }
 
 /// A temp directory removed when the render finishes, whatever the outcome.
@@ -483,13 +483,13 @@ class ScopedTempDir
   public:
     ScopedTempDir()
         : path_(fs::temp_directory_path() /
-                ("lectern-export-" + util::random_hex(12)))
+                ("lectern-export-" + util::fRandomHex(12)))
     {
         std::error_code ec;
         fs::create_directories(path_, ec);
         if (ec)
         {
-            throw AppError::internal("cannot create a temp directory");
+            throw AppError::fInternal("cannot create a temp directory");
         }
     }
 
@@ -502,7 +502,7 @@ class ScopedTempDir
     ScopedTempDir(const ScopedTempDir &) = delete;
     ScopedTempDir &operator=(const ScopedTempDir &) = delete;
 
-    const fs::path &path() const
+    const fs::path &fPath() const
     {
         return path_;
     }
@@ -511,18 +511,18 @@ class ScopedTempDir
     fs::path path_;
 };
 
-std::string render_pdf(const std::string &html)
+std::string fRenderPdf(const std::string &html)
 {
     const ScopedTempDir temp;
-    const fs::path html_file = temp.path() / "export.html";
-    util::write_file_atomic(html_file, html);
+    const fs::path html_file = temp.fPath() / "export.html";
+    util::fWriteFileAtomic(html_file, html);
 
-    const fs::path profile_dir = temp.path() / "profile";
+    const fs::path profile_dir = temp.fPath() / "profile";
     std::error_code ec;
     fs::create_directories(profile_dir, ec);
 
     ChildProcess browser(
-        find_browser(),
+        fFindBrowser(),
         {
             "--headless=new",
             "--disable-gpu",
@@ -550,38 +550,38 @@ std::string render_pdf(const std::string &html)
         });
 
     const auto [port, browser_path] =
-        wait_for_devtools_port(profile_dir, kRenderTimeout);
+        fWaitForDevtoolsPort(profile_dir, cRenderTimeout);
 
     CdpSession session;
-    session.connect(port, browser_path, kRenderTimeout);
+    session.fConnect(port, browser_path, cRenderTimeout);
 
     const json target =
-        session.call("Target.createTarget", {{"url", "about:blank"}});
+        session.fCall("Target.createTarget", {{"url", "about:blank"}});
     const std::string target_id = target.value("targetId", "");
     if (target_id.empty())
     {
-        throw AppError::internal("the PDF renderer opened no page");
+        throw AppError::fInternal("the PDF renderer opened no page");
     }
 
-    const json attached = session.call(
+    const json attached = session.fCall(
         "Target.attachToTarget", {{"targetId", target_id}, {"flatten", true}});
     const std::string session_id = attached.value("sessionId", "");
     if (session_id.empty())
     {
-        throw AppError::internal("could not attach to the rendered page");
+        throw AppError::fInternal("could not attach to the rendered page");
     }
-    session.set_session_id(session_id);
+    session.fSetSessionId(session_id);
 
     // The export HTML needs no scripting — mermaid diagrams and notebook
     // pages are pre-rendered to static SVG/PNG client-side — so turning it
     // off removes the entire script-execution surface.
-    session.call("Emulation.setScriptExecutionDisabled",
+    session.fCall("Emulation.setScriptExecutionDisabled",
                  {{"value", true}},
                  session_id);
 
     // Every request now pauses for the allowlist in handle_paused_request.
-    session.call("Fetch.enable", json::object(), session_id);
-    session.call("Page.enable", json::object(), session_id);
+    session.fCall("Fetch.enable", json::object(), session_id);
+    session.fCall("Page.enable", json::object(), session_id);
 
     const std::string file_url = "file:///" + [&] {
         std::string path = html_file.generic_string();
@@ -594,32 +594,32 @@ std::string render_pdf(const std::string &html)
         return path;
     }();
 
-    session.call("Page.navigate", {{"url", file_url}}, session_id);
-    session.wait_for_event("Page.loadEventFired", kRenderTimeout);
+    session.fCall("Page.navigate", {{"url", file_url}}, session_id);
+    session.fWaitForEvent("Page.loadEventFired", cRenderTimeout);
 
-    const json printed = session.call("Page.printToPDF",
+    const json printed = session.fCall("Page.printToPDF",
                                       {{"displayHeaderFooter", false},
                                        {"printBackground", true},
                                        {"preferCSSPageSize", true}},
                                       session_id);
 
     const auto decoded =
-        util::base64_decode(printed.value("data", std::string{}));
+        util::fBase64Decode(printed.value("data", std::string{}));
     if (!decoded || decoded->empty())
     {
-        throw AppError::internal("the PDF renderer produced nothing");
+        throw AppError::fInternal("the PDF renderer produced nothing");
     }
     return *decoded;
 }
 
 }  // namespace
 
-void init()
+void fInit()
 {
-    cdp_loop().run();
+    fCdpLoop().run();
 }
 
-void register_routes()
+void fRegisterRoutes()
 {
     drogon::app().registerHandler(
         "/api/export/pdf",
@@ -631,19 +631,19 @@ void register_routes()
             std::string html;
             try
             {
-                user_id = auth::current_user_id(req);
+                user_id = auth::fCurrentUserId(req);
                 html = std::string(req->getBody());
             }
             catch (const AppError &error)
             {
-                callback(http::error_response(error));
+                callback(http::fErrorResponse(error));
                 return;
             }
 
             std::thread([callback = std::move(callback),
                          user_id = std::move(user_id),
                          html = std::move(html)]() mutable {
-                http::guard(
+                http::fGuard(
                     std::move(callback), [&]() -> drogon::HttpResponsePtr {
                         // The renderer below only ever accepts file:// and
                         // data: requests, so any custom fonts the account
@@ -651,7 +651,7 @@ void register_routes()
                         // before Chromium sees the page — an http:// url()
                         // back to this server would just be dropped.
                         const std::string font_style =
-                            fonts::embed_account_fonts_style(user_id);
+                            fonts::fEmbedAccountFontsStyle(user_id);
 
                         std::string document;
                         const size_t head = html.find("<head>");
@@ -672,16 +672,16 @@ void register_routes()
 
                         // Hold a render slot for the whole render, and give
                         // up rather than queue forever.
-                        if (!render_slots().try_acquire_for(kQueueTimeout))
+                        if (!fRenderSlots().try_acquire_for(cQueueTimeout))
                         {
-                            throw AppError::internal(
+                            throw AppError::fInternal(
                                 "PDF renderer is busy, try again");
                         }
                         struct SlotGuard
                         {
                             ~SlotGuard()
                             {
-                                render_slots().release();
+                                fRenderSlots().release();
                             }
                         } slot_guard;
 
@@ -689,7 +689,7 @@ void register_routes()
                         resp->setStatusCode(drogon::k200OK);
                         resp->setContentTypeCodeAndCustomString(
                             drogon::CT_CUSTOM, "application/pdf");
-                        resp->setBody(render_pdf(document));
+                        resp->setBody(fRenderPdf(document));
                         return resp;
                     });
             }).detach();

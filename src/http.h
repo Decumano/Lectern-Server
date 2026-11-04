@@ -21,7 +21,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr &)>;
 
 namespace lectern::http {
 
-inline drogon::HttpResponsePtr json_response(
+inline drogon::HttpResponsePtr fJsonResponse(
     const nlohmann::json &body,
     drogon::HttpStatusCode status = drogon::k200OK)
 {
@@ -34,7 +34,7 @@ inline drogon::HttpResponsePtr json_response(
 
 /// Plain-text body. `read_work_file` and friends return raw document text
 /// rather than JSON, matching the frontend's `res.text()` calls.
-inline drogon::HttpResponsePtr text_response(std::string body)
+inline drogon::HttpResponsePtr fTextResponse(std::string body)
 {
     auto resp = drogon::HttpResponse::newHttpResponse();
     resp->setStatusCode(drogon::k200OK);
@@ -45,24 +45,24 @@ inline drogon::HttpResponsePtr text_response(std::string body)
 }
 
 /// Bare 200 with no body, for endpoints that only signal success.
-inline drogon::HttpResponsePtr ok_response()
+inline drogon::HttpResponsePtr fOkResponse()
 {
     auto resp = drogon::HttpResponse::newHttpResponse();
     resp->setStatusCode(drogon::k200OK);
     return resp;
 }
 
-inline drogon::HttpResponsePtr error_response(const AppError &error)
+inline drogon::HttpResponsePtr fErrorResponse(const AppError &error)
 {
-    return json_response(nlohmann::json{{"error", error.message()}},
-                         error.status());
+    return fJsonResponse(nlohmann::json{{"error", error.fMessage()}},
+                         error.fStatus());
 }
 
 /// Wraps a handler body. Anything that throws AppError becomes that error's
 /// status and message; anything else becomes a 500 whose detail is logged but
 /// not leaked to the client.
 template <typename Callback, typename Fn>
-void guard(Callback &&callback, Fn &&fn)
+void fGuard(Callback &&callback, Fn &&fn)
 {
     try
     {
@@ -70,36 +70,36 @@ void guard(Callback &&callback, Fn &&fn)
     }
     catch (const AppError &error)
     {
-        callback(error_response(error));
+        callback(fErrorResponse(error));
     }
     catch (const std::exception &error)
     {
         spdlog::error("unhandled exception in handler: {}", error.what());
-        callback(error_response(AppError::internal("internal server error")));
+        callback(fErrorResponse(AppError::fInternal("internal server error")));
     }
 }
 
 /// Query parameter, or an empty string when absent — the Rust handlers used
 /// `#[serde(default)]` for exactly this.
-inline std::string query(const drogon::HttpRequestPtr &req,
+inline std::string fQuery(const drogon::HttpRequestPtr &req,
                          const std::string &name)
 {
     return req->getParameter(name);
 }
 
 /// Query parameter that must be present and non-empty.
-inline std::string required_query(const drogon::HttpRequestPtr &req,
+inline std::string fRequiredQuery(const drogon::HttpRequestPtr &req,
                                   const std::string &name)
 {
     std::string value = req->getParameter(name);
     if (value.empty())
     {
-        throw AppError::bad_request("missing '" + name + "' parameter");
+        throw AppError::fBadRequest("missing '" + name + "' parameter");
     }
     return value;
 }
 
-inline bool query_bool(const drogon::HttpRequestPtr &req,
+inline bool fQueryBool(const drogon::HttpRequestPtr &req,
                        const std::string &name)
 {
     const std::string value = req->getParameter(name);
@@ -108,31 +108,31 @@ inline bool query_bool(const drogon::HttpRequestPtr &req,
 
 /// Parses a JSON request body, rejecting anything malformed with a 400 rather
 /// than letting the exception escape as a 500.
-inline nlohmann::json json_body(const drogon::HttpRequestPtr &req)
+inline nlohmann::json fJsonBody(const drogon::HttpRequestPtr &req)
 {
     const auto body = req->getBody();
     auto parsed = nlohmann::json::parse(body, nullptr, false);
     if (parsed.is_discarded() || !parsed.is_object())
     {
-        throw AppError::bad_request("expected a JSON object body");
+        throw AppError::fBadRequest("expected a JSON object body");
     }
     return parsed;
 }
 
 /// Required string field of a JSON object body.
-inline std::string json_string(const nlohmann::json &object,
+inline std::string fJsonString(const nlohmann::json &object,
                                const char *key)
 {
     if (!object.contains(key) || !object[key].is_string())
     {
-        throw AppError::bad_request(std::string("missing '") + key +
+        throw AppError::fBadRequest(std::string("missing '") + key +
                                     "' field");
     }
     return object[key].get<std::string>();
 }
 
 /// Optional string field; `fallback` when absent or not a string.
-inline std::string json_string_or(const nlohmann::json &object,
+inline std::string fJsonStringOr(const nlohmann::json &object,
                                   const char *key,
                                   std::string fallback = {})
 {
@@ -143,7 +143,7 @@ inline std::string json_string_or(const nlohmann::json &object,
     return object[key].get<std::string>();
 }
 
-inline bool json_bool(const nlohmann::json &object,
+inline bool fJsonBool(const nlohmann::json &object,
                       const char *key,
                       bool fallback = false)
 {

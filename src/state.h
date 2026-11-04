@@ -28,21 +28,21 @@ class RateLimiter
     using Clock = std::chrono::steady_clock;
 
     /// True when the bucket already reached `max` hits inside `window`.
-    bool is_limited(const std::string &ip,
+    bool fIsLimited(const std::string &ip,
                     const std::string &kind,
                     uint32_t max,
                     std::chrono::seconds window);
 
     /// Records one hit against the bucket, starting a fresh window if the
     /// previous one expired.
-    void record(const std::string &ip,
+    void fRecord(const std::string &ip,
                 const std::string &kind,
                 std::chrono::seconds window);
 
   private:
     /// Longest window any caller uses; entries older than this are dropped on
     /// the next hit so the map can't grow without bound.
-    static constexpr std::chrono::seconds kMaxWindow{60 * 60};
+    static constexpr std::chrono::seconds cMaxWindow{60 * 60};
 
     struct Bucket
     {
@@ -83,10 +83,10 @@ struct AppState
     /// peer is listed in TRUSTED_PROXIES, use the rightmost X-Forwarded-For
     /// entry instead: that's the value our own proxy appended, the entries
     /// left of it are client-controlled and stay untrusted.
-    std::string client_ip(const drogon::HttpRequestPtr &req) const;
+    std::string fClientIp(const drogon::HttpRequestPtr &req) const;
 };
 
 /// The process-wide state, set up once in main().
-AppState &state();
+AppState &fState();
 
 }  // namespace lectern

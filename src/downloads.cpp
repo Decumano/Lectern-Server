@@ -15,12 +15,12 @@ using json = nlohmann::json;
 
 namespace lectern {
 
-std::shared_ptr<Releases> Releases::from_env()
+std::shared_ptr<Releases> Releases::fFromEnv()
 {
     auto releases = std::make_shared<Releases>();
     releases->repo_ =
-        util::env_or("DESKTOP_RELEASES_REPO", "Decumano/OfficeSuite");
-    auto token = util::env("GITHUB_RELEASES_TOKEN");
+        util::fEnvOr("DESKTOP_RELEASES_REPO", "Decumano/OfficeSuite");
+    auto token = util::fEnv("GITHUB_RELEASES_TOKEN");
     if (token && !token->empty())
     {
         releases->token_ = std::move(token);
@@ -28,21 +28,21 @@ std::shared_ptr<Releases> Releases::from_env()
     return releases;
 }
 
-std::optional<json> Releases::cached()
+std::optional<json> Releases::fCached()
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!cache_)
     {
         return std::nullopt;
     }
-    if (std::chrono::steady_clock::now() - cached_at_ >= kCacheTtl)
+    if (std::chrono::steady_clock::now() - cached_at_ >= cCacheTtl)
     {
         return std::nullopt;
     }
     return cache_;
 }
 
-void Releases::store(json view)
+void Releases::fStore(json view)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     cache_ = std::move(view);
@@ -62,28 +62,28 @@ namespace {
 /// Buffering whole is simpler and honest about its bound: desktop installers
 /// are single-digit megabytes, and this ceiling is two orders of magnitude
 /// above that. Raise it with DOWNLOAD_MAX_BYTES if a release ever needs it.
-size_t max_asset_bytes()
+size_t fMaxAssetBytes()
 {
     static const size_t value = static_cast<size_t>(
-        util::env_i64("DOWNLOAD_MAX_BYTES", 256LL * 1024 * 1024));
+        util::fEnvI64("DOWNLOAD_MAX_BYTES", 256LL * 1024 * 1024));
     return value;
 }
 
-cpr::Header github_headers(const Releases &releases, const char *accept)
+cpr::Header fGithubHeaders(const Releases &releases, const char *accept)
 {
     cpr::Header headers{
         // GitHub rejects requests without a User-Agent.
         {"User-Agent", "lectern-server-cpp"},
         {"Accept", accept}};
-    if (releases.token())
+    if (releases.fToken())
     {
-        headers["Authorization"] = "Bearer " + *releases.token();
+        headers["Authorization"] = "Bearer " + *releases.fToken();
     }
     return headers;
 }
 
 /// The name is only cosmetic (the id picks the asset); make it header-safe.
-std::string safe_attachment_name(const std::string &name)
+std::string fSafeAttachmentName(const std::string &name)
 {
     std::string out;
     out.reserve(name.size());
@@ -103,49 +103,49 @@ std::string safe_attachment_name(const std::string &name)
 /// event loop must not be. Drogon callbacks are safe to invoke from any
 /// thread.
 template <typename Fn>
-void off_thread(HttpCallback callback, Fn &&fn)
+void fOffThread(HttpCallback callback, Fn &&fn)
 {
     std::thread([callback = std::move(callback),
                  fn = std::forward<Fn>(fn)]() mutable {
-        http::guard(std::move(callback), [&] { return fn(); });
+        http::fGuard(std::move(callback), [&] { return fn(); });
     }).detach();
 }
 
 }  // namespace
 
-void register_routes()
+void fRegisterRoutes()
 {
     auto &app = drogon::app();
 
     app.registerHandler(
         "/api/downloads/latest",
         [](const drogon::HttpRequestPtr &, HttpCallback &&callback) {
-            off_thread(std::move(callback), []() -> drogon::HttpResponsePtr {
-                auto releases = state().releases;
-                if (const auto cached = releases->cached())
+            fOffThread(std::move(callback), []() -> drogon::HttpResponsePtr {
+                auto releases = fState().releases;
+                if (const auto cached = releases->fCached())
                 {
-                    return http::json_response(*cached);
+                    return http::fJsonResponse(*cached);
                 }
 
                 const std::string url = "https://api.github.com/repos/" +
-                                        releases->repo() + "/releases/latest";
+                                        releases->fRepo() + "/releases/latest";
                 const cpr::Response response = cpr::Get(
                     cpr::Url{url},
-                    github_headers(*releases, "application/vnd.github+json"),
+                    fGithubHeaders(*releases, "application/vnd.github+json"),
                     cpr::Timeout{15000});
 
                 // Private repo without a token, or no release published yet:
                 // either way the page falls back to its static GitHub link.
                 if (response.status_code < 200 || response.status_code >= 300)
                 {
-                    throw AppError::not_found();
+                    throw AppError::fNotFound();
                 }
 
                 const auto release =
                     json::parse(response.text, nullptr, false);
                 if (release.is_discarded())
                 {
-                    throw AppError::internal("malformed GitHub response");
+                    throw AppError::fInternal("malformed GitHub response");
                 }
 
                 json assets = json::array();
@@ -173,8 +173,8 @@ void register_routes()
                               release.value("published_at", "")},
                              {"assets", assets}};
 
-                releases->store(view);
-                return http::json_response(view);
+                releases->fStore(view);
+                return http::fJsonResponse(view);
             });
         },
         {drogon::Get});
@@ -189,7 +189,7 @@ void register_routes()
            HttpCallback &&callback,
            std::string asset_id,
            std::string name) {
-            off_thread(
+            fOffThread(
                 std::move(callback),
                 [asset_id = std::move(asset_id),
                  name = std::move(name)]() -> drogon::HttpResponsePtr {
@@ -199,17 +199,17 @@ void register_routes()
                         asset_id.find_first_not_of("0123456789") !=
                             std::string::npos)
                     {
-                        throw AppError::not_found();
+                        throw AppError::fNotFound();
                     }
 
-                    auto releases = state().releases;
+                    auto releases = fState().releases;
                     const std::string url = "https://api.github.com/repos/" +
-                                            releases->repo() +
+                                            releases->fRepo() +
                                             "/releases/assets/" + asset_id;
 
                     const cpr::Response response = cpr::Get(
                         cpr::Url{url},
-                        github_headers(*releases, "application/octet-stream"),
+                        fGithubHeaders(*releases, "application/octet-stream"),
                         cpr::Timeout{0},  // large binaries; no wall clock cap
                         // Follow at most five hops, and never resend the
                         // Authorization header across a host change — which
@@ -221,11 +221,11 @@ void register_routes()
                     if (response.status_code < 200 ||
                         response.status_code >= 300)
                     {
-                        throw AppError::not_found();
+                        throw AppError::fNotFound();
                     }
-                    if (response.text.size() > max_asset_bytes())
+                    if (response.text.size() > fMaxAssetBytes())
                     {
-                        throw AppError::internal(
+                        throw AppError::fInternal(
                             "release asset is larger than this server will "
                             "proxy");
                     }
@@ -236,7 +236,7 @@ void register_routes()
                         drogon::CT_CUSTOM, "application/octet-stream");
                     resp->addHeader("Content-Disposition",
                                     "attachment; filename=\"" +
-                                        safe_attachment_name(name) + "\"");
+                                        fSafeAttachmentName(name) + "\"");
                     resp->setBody(response.text);
                     return resp;
                 });

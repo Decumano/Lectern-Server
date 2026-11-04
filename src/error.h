@@ -22,49 +22,49 @@ class AppError : public std::runtime_error
     {
     }
 
-    drogon::HttpStatusCode status() const noexcept
+    drogon::HttpStatusCode fStatus() const noexcept
     {
         return status_;
     }
 
-    const std::string &message() const noexcept
+    const std::string &fMessage() const noexcept
     {
         return message_;
     }
 
-    static AppError bad_request(std::string message)
+    static AppError fBadRequest(std::string message)
     {
         return {drogon::k400BadRequest, std::move(message)};
     }
 
-    static AppError unauthorized()
+    static AppError fUnauthorized()
     {
         return {drogon::k401Unauthorized, "unauthorized"};
     }
 
-    static AppError forbidden()
+    static AppError fForbidden()
     {
         return {drogon::k403Forbidden,
                 "you don't have permission to do that"};
     }
 
-    static AppError not_found()
+    static AppError fNotFound()
     {
         return {drogon::k404NotFound, "not found"};
     }
 
-    static AppError conflict(std::string message)
+    static AppError fConflict(std::string message)
     {
         return {drogon::k409Conflict, std::move(message)};
     }
 
-    static AppError too_many_requests()
+    static AppError fTooManyRequests()
     {
         return {drogon::k429TooManyRequests,
                 "too many attempts, try again later"};
     }
 
-    static AppError internal(std::string message)
+    static AppError fInternal(std::string message)
     {
         return {drogon::k500InternalServerError, std::move(message)};
     }

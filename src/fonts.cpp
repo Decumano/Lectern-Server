@@ -20,9 +20,9 @@ namespace lectern::fonts {
 
 namespace {
 
-constexpr int64_t kMaxFontsPerAccount = 30;
+constexpr int64_t cMaxFontsPerAccount = 30;
 
-std::optional<std::string> content_type_for(const std::string &ext)
+std::optional<std::string> fContentTypeFor(const std::string &ext)
 {
     if (ext == "ttf")
     {
@@ -44,7 +44,7 @@ std::optional<std::string> content_type_for(const std::string &ext)
 }
 
 /// The stored content type is `font/<ext>`; recover the extension from it.
-std::string ext_from_content_type(const std::string &content_type)
+std::string fExtFromContentType(const std::string &content_type)
 {
     const size_t slash = content_type.rfind('/');
     if (slash == std::string::npos || slash + 1 >= content_type.size())
@@ -54,16 +54,16 @@ std::string ext_from_content_type(const std::string &content_type)
     return content_type.substr(slash + 1);
 }
 
-fs::path font_file_path(const std::string &owner_id,
+fs::path fFontFilePath(const std::string &owner_id,
                         const std::string &font_id,
                         const std::string &ext)
 {
-    return state().fonts_dir / owner_id / (font_id + "." + ext);
+    return fState().fonts_dir / owner_id / (font_id + "." + ext);
 }
 
 /// Characters that could escape a single-quoted CSS string, or the enclosing
 /// `<style>` element, when a family name is interpolated into either.
-bool is_unsafe_family_char(char c)
+bool fIsUnsafeFamilyChar(char c)
 {
     const auto uc = static_cast<unsigned char>(c);
     if (std::iscntrl(uc) != 0)
@@ -95,13 +95,13 @@ bool is_unsafe_family_char(char c)
 ///
 /// Upload already rejects these characters, so in practice this never has to
 /// remove anything — it's the second of the two locks on the same door.
-std::string css_string_literal_body(const std::string &family_name)
+std::string fCssStringLiteralBody(const std::string &family_name)
 {
     std::string out;
     out.reserve(family_name.size());
     for (const char c : family_name)
     {
-        if (!is_unsafe_family_char(c))
+        if (!fIsUnsafeFamilyChar(c))
         {
             out.push_back(c);
         }
@@ -109,7 +109,7 @@ std::string css_string_literal_body(const std::string &family_name)
     return out;
 }
 
-const char *font_format_for(const std::string &ext)
+const char *fFontFormatFor(const std::string &ext)
 {
     if (ext == "woff2")
     {
@@ -132,44 +132,44 @@ struct FontRow
     std::string content_type;
 };
 
-FontRow load_font_row(const std::string &font_id)
+FontRow fLoadFontRow(const std::string &font_id)
 {
-    const auto row = state().db->query_one(
+    const auto row = fState().db->fQueryOne(
         "SELECT owner_id, content_type FROM custom_fonts WHERE id = ?",
         {DbValue(font_id)});
     if (!row)
     {
-        throw AppError::not_found();
+        throw AppError::fNotFound();
     }
-    return {row->text(0), row->text(1)};
+    return {row->fText(0), row->fText(1)};
 }
 
 /// The id becomes a filesystem path segment and a URL path segment; keep it
 /// to the UUID alphabet so a hostile value can't reach either.
-void validate_font_id(const std::string &font_id)
+void fValidateFontId(const std::string &font_id)
 {
     if (font_id.empty() || font_id.size() > 64)
     {
-        throw AppError::bad_request("invalid font id");
+        throw AppError::fBadRequest("invalid font id");
     }
     for (const char c : font_id)
     {
         const auto uc = static_cast<unsigned char>(c);
         if (std::isalnum(uc) == 0 && c != '-')
         {
-            throw AppError::bad_request("invalid font id");
+            throw AppError::fBadRequest("invalid font id");
         }
     }
 }
 
 }  // namespace
 
-std::string embed_account_fonts_style(const std::string &owner_id)
+std::string fEmbedAccountFontsStyle(const std::string &owner_id)
 {
     std::vector<Row> rows;
     try
     {
-        rows = state().db->query_all(
+        rows = fState().db->fQueryAll(
             "SELECT id, family_name, content_type FROM custom_fonts"
             " WHERE owner_id = ?",
             {DbValue(owner_id)});
@@ -187,46 +187,46 @@ std::string embed_account_fonts_style(const std::string &owner_id)
     std::string style = "<style>\n";
     for (const auto &row : rows)
     {
-        const std::string id = row.text(0);
-        const std::string family_name = row.text(1);
-        const std::string content_type = row.text(2);
-        const std::string ext = ext_from_content_type(content_type);
+        const std::string id = row.fText(0);
+        const std::string family_name = row.fText(1);
+        const std::string content_type = row.fText(2);
+        const std::string ext = fExtFromContentType(content_type);
 
-        const auto bytes = util::read_file(font_file_path(owner_id, id, ext));
+        const auto bytes = util::fReadFile(fFontFilePath(owner_id, id, ext));
         if (!bytes)
         {
             continue;
         }
 
         style += "@font-face{font-family:'";
-        style += css_string_literal_body(family_name);
+        style += fCssStringLiteralBody(family_name);
         style += "';src:url(data:";
         style += content_type;
         style += ";base64,";
-        style += util::base64_encode(*bytes);
+        style += util::fBase64Encode(*bytes);
         style += ") format('";
-        style += font_format_for(ext);
+        style += fFontFormatFor(ext);
         style += "');}\n";
     }
     style += "</style>\n";
     return style;
 }
 
-void register_routes()
+void fRegisterRoutes()
 {
     auto &app = drogon::app();
 
     app.registerHandler(
         "/api/fonts",
         [](const drogon::HttpRequestPtr &req, HttpCallback &&callback) {
-            http::guard(std::move(callback), [&]() -> drogon::HttpResponsePtr {
+            http::fGuard(std::move(callback), [&]() -> drogon::HttpResponsePtr {
                 const std::string user_id =
-                    auth::current_user_id_with_headers(req);
-                auto &db = *state().db;
+                    auth::fCurrentUserIdWithHeaders(req);
+                auto &db = *fState().db;
 
                 if (req->method() == drogon::Get)
                 {
-                    const auto rows = db.query_all(
+                    const auto rows = db.fQueryAll(
                         "SELECT id, family_name, content_type, byte_size"
                         " FROM custom_fonts WHERE owner_id = ?"
                         " ORDER BY family_name",
@@ -235,18 +235,18 @@ void register_routes()
                     json out = json::array();
                     for (const auto &row : rows)
                     {
-                        out.push_back({{"id", row.text(0)},
-                                       {"familyName", row.text(1)},
-                                       {"contentType", row.text(2)},
-                                       {"byteSize", row.i64(3)}});
+                        out.push_back({{"id", row.fText(0)},
+                                       {"familyName", row.fText(1)},
+                                       {"contentType", row.fText(2)},
+                                       {"byteSize", row.fI64(3)}});
                     }
-                    return http::json_response(out);
+                    return http::fJsonResponse(out);
                 }
 
                 const std::string family_name =
-                    util::trim(http::required_query(req, "familyName"));
+                    util::fTrim(http::fRequiredQuery(req, "familyName"));
                 const std::string filename =
-                    http::required_query(req, "filename");
+                    http::fRequiredQuery(req, "filename");
 
                 // The name is interpolated into a CSS string inside a
                 // `<style>` element for PDF export (see
@@ -256,65 +256,65 @@ void register_routes()
                 bool bad_name = family_name.empty() || family_name.size() > 100;
                 for (const char c : family_name)
                 {
-                    bad_name = bad_name || is_unsafe_family_char(c);
+                    bad_name = bad_name || fIsUnsafeFamilyChar(c);
                 }
                 if (bad_name)
                 {
-                    throw AppError::bad_request("invalid font family name");
+                    throw AppError::fBadRequest("invalid font family name");
                 }
 
-                const std::string ext = util::extension_of(filename);
-                const auto content_type = content_type_for(ext);
+                const std::string ext = util::fExtensionOf(filename);
+                const auto content_type = fContentTypeFor(ext);
                 if (!content_type)
                 {
-                    throw AppError::bad_request(
+                    throw AppError::fBadRequest(
                         "font must be .ttf, .otf, .woff or .woff2");
                 }
 
                 const std::string body(req->getBody());
-                if (body.empty() || body.size() > kMaxFontBytes)
+                if (body.empty() || body.size() > cMaxFontBytes)
                 {
-                    throw AppError::bad_request(
+                    throw AppError::fBadRequest(
                         "font file too large (5MB max)");
                 }
 
-                const auto count = db.query_one(
+                const auto count = db.fQueryOne(
                     "SELECT COUNT(*) FROM custom_fonts WHERE owner_id = ?",
                     {DbValue(user_id)});
-                if (count && count->i64(0) >= kMaxFontsPerAccount)
+                if (count && count->fI64(0) >= cMaxFontsPerAccount)
                 {
-                    throw AppError::bad_request(
+                    throw AppError::fBadRequest(
                         "font library is full (" +
-                        std::to_string(kMaxFontsPerAccount) +
+                        std::to_string(cMaxFontsPerAccount) +
                         " max) — delete one first");
                 }
 
-                const std::string id = util::uuid_v4();
-                util::write_file_atomic(font_file_path(user_id, id, ext),
+                const std::string id = util::fUuidV4();
+                util::fWriteFileAtomic(fFontFilePath(user_id, id, ext),
                                         body);
 
                 // Re-uploading an existing family name replaces the file; the
                 // UNIQUE constraint means the insert would otherwise fail
                 // outright.
-                const auto existing = db.query_one(
+                const auto existing = db.fQueryOne(
                     "SELECT id, content_type FROM custom_fonts"
                     " WHERE owner_id = ? AND family_name = ?",
                     {DbValue(user_id), DbValue(family_name)});
                 if (existing)
                 {
-                    const std::string old_id = existing->text(0);
+                    const std::string old_id = existing->fText(0);
                     std::error_code ec;
                     fs::remove(
-                        font_file_path(user_id,
+                        fFontFilePath(user_id,
                                        old_id,
-                                       ext_from_content_type(
-                                           existing->text(1))),
+                                       fExtFromContentType(
+                                           existing->fText(1))),
                         ec);
-                    db.execute("DELETE FROM custom_fonts WHERE id = ?",
+                    db.fExecute("DELETE FROM custom_fonts WHERE id = ?",
                                {DbValue(old_id)});
                 }
 
-                db.execute(
+                db.fExecute(
                     "INSERT INTO custom_fonts (id, owner_id, family_name,"
                     " filename, content_type, byte_size, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -324,9 +324,9 @@ void register_routes()
                      DbValue(filename),
                      DbValue(*content_type),
                      DbValue(static_cast<int64_t>(body.size())),
-                     DbValue(util::now_ms())});
+                     DbValue(util::fNowMs())});
 
-                return http::json_response(
+                return http::fJsonResponse(
                     {{"id", id},
                      {"familyName", family_name},
                      {"contentType", *content_type},
@@ -340,32 +340,32 @@ void register_routes()
         [](const drogon::HttpRequestPtr &req,
            HttpCallback &&callback,
            std::string font_id) {
-            http::guard(std::move(callback), [&]() -> drogon::HttpResponsePtr {
+            http::fGuard(std::move(callback), [&]() -> drogon::HttpResponsePtr {
                 const std::string user_id =
-                    auth::current_user_id_with_headers(req);
-                validate_font_id(font_id);
-                const FontRow row = load_font_row(font_id);
+                    auth::fCurrentUserIdWithHeaders(req);
+                fValidateFontId(font_id);
+                const FontRow row = fLoadFontRow(font_id);
                 if (row.owner_id != user_id)
                 {
-                    throw AppError::not_found();
+                    throw AppError::fNotFound();
                 }
-                const std::string ext = ext_from_content_type(row.content_type);
+                const std::string ext = fExtFromContentType(row.content_type);
 
                 if (req->method() == drogon::Delete)
                 {
                     std::error_code ec;
-                    fs::remove(font_file_path(user_id, font_id, ext), ec);
-                    state().db->execute(
+                    fs::remove(fFontFilePath(user_id, font_id, ext), ec);
+                    fState().db->fExecute(
                         "DELETE FROM custom_fonts WHERE id = ?",
                         {DbValue(font_id)});
-                    return http::ok_response();
+                    return http::fOkResponse();
                 }
 
                 const auto bytes =
-                    util::read_file(font_file_path(user_id, font_id, ext));
+                    util::fReadFile(fFontFilePath(user_id, font_id, ext));
                 if (!bytes)
                 {
-                    throw AppError::not_found();
+                    throw AppError::fNotFound();
                 }
 
                 auto resp = drogon::HttpResponse::newHttpResponse();

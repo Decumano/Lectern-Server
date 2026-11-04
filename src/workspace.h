@@ -17,7 +17,7 @@
 
 namespace lectern::workspace {
 
-inline constexpr std::array<std::string_view, 9> kWorkFileExtensions = {
+inline constexpr std::array<std::string_view, 9> cWorkFileExtensions = {
     "mdp", "mds", "mdg", "mdn", "mdl", "mdc", "mde", "mdb", "mdd"};
 
 /// Root-level sidecar files that sync clients need to see in listings (with a
@@ -25,7 +25,7 @@ inline constexpr std::array<std::string_view, 9> kWorkFileExtensions = {
 /// templates and roaming UI preferences (theme), so both follow the account
 /// across devices. The web UI filters these out of its file tree; the desktop
 /// tree never lists them (its walker only shows work extensions).
-inline constexpr std::array<std::string_view, 2> kSyncSidecarFiles = {
+inline constexpr std::array<std::string_view, 2> cSyncSidecarFiles = {
     "_lktpl.json", "_lkprefs.json"};
 
 /// Rejects absolute paths, drive-letter prefixes, and `..` components so a
@@ -33,31 +33,31 @@ inline constexpr std::array<std::string_view, 2> kSyncSidecarFiles = {
 /// Returns the path in canonical rel form: forward slashes, no redundant
 /// separators — the same string clients use in every request and listing.
 /// Throws AppError::bad_request on anything suspicious.
-std::string safe_rel_path(std::string_view rel_path);
+std::string fSafeRelPath(std::string_view rel_path);
 
-bool is_work_file(std::string_view rel_path);
+bool fIsWorkFile(std::string_view rel_path);
 
 /// The listing shape the frontend and sync clients consume: name, relPath,
 /// isDir, modified, hash, children.
-nlohmann::json walk_work_dir(const std::filesystem::path &dir,
+nlohmann::json fWalkWorkDir(const std::filesystem::path &dir,
                              const std::string &rel_prefix);
 
 /// Cheap change-detection for one file: lets a client poll "did anyone else
 /// write this?" without downloading the content or walking the whole tree.
-nlohmann::json stat_file(const std::filesystem::path &path);
+nlohmann::json fStatFile(const std::filesystem::path &path);
 
 /// Registration is open, so an unbounded workspace lets any account fill the
 /// server's disk. Checked before a write that would grow the workspace;
 /// replacing a file with a smaller one always succeeds, so a user who hits
 /// the ceiling can still edit their way back under it.
-void check_quota(const std::filesystem::path &root,
+void fCheckQuota(const std::filesystem::path &root,
                  const std::filesystem::path &target,
                  uint64_t incoming_len);
 
 /// The caller's workspace root, created if missing.
-std::filesystem::path user_root(const drogon::HttpRequestPtr &req,
+std::filesystem::path fUserRoot(const drogon::HttpRequestPtr &req,
                                 std::string *user_id_out = nullptr);
 
-void register_routes();
+void fRegisterRoutes();
 
 }  // namespace lectern::workspace

@@ -27,7 +27,7 @@ namespace {
 /// stale everything — for days. HTML entry points must always revalidate
 /// (`no-cache` still allows 304s, so it stays cheap); other assets get an
 /// hour, and index.html's `?v=N` query params handle hard busts on deploys.
-void install_static_cache_policy()
+void fInstallStaticCachePolicy()
 {
     // PreSending rather than PostHandling: static files are served by
     // drogon's own file handler, which never runs the post-handling advice,
@@ -36,11 +36,11 @@ void install_static_cache_policy()
         [](const drogon::HttpRequestPtr &req,
            const drogon::HttpResponsePtr &resp) {
             const std::string path(req->path());
-            if (util::starts_with(path, "/api"))
+            if (util::fStartsWith(path, "/api"))
             {
                 return;
             }
-            const bool is_html = path == "/" || util::ends_with(path, ".html") ||
+            const bool is_html = path == "/" || util::fEndsWith(path, ".html") ||
                                  path.find('.') == std::string::npos;
             // addHeader would append a second value if drogon's static file
             // handler already set one.
@@ -54,10 +54,10 @@ void install_static_cache_policy()
 /// Single-page fallback: any unmatched, non-API path serves index.html so the
 /// frontend's client-side routes survive a hard refresh. `set404 = false`
 /// keeps the status at 200, which is what the Rust `ServeDir::fallback` did.
-void install_spa_fallback(const fs::path &web_root)
+void fInstallSpaFallback(const fs::path &web_root)
 {
     const fs::path index = web_root / "index.html";
-    const auto html = util::read_file(index);
+    const auto html = util::fReadFile(index);
     if (!html)
     {
         spdlog::warn(
@@ -80,14 +80,14 @@ int main()
 {
     try
     {
-        util::load_dotenv();
-        util::init_crypto();
+        util::fLoadDotenv();
+        util::fInitCrypto();
 
         spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
         spdlog::set_level(
-            spdlog::level::from_str(util::env_or("LOG_LEVEL", "info")));
+            spdlog::level::from_str(util::fEnvOr("LOG_LEVEL", "info")));
 
-        auto &st = state();
+        auto &st = fState();
 
         // Everything this server persists lives under one root, so a
         // deployment can move its state to another disk with a single
@@ -95,37 +95,37 @@ int main()
         // set explicitly — they only fall back to DATA_DIR — which keeps
         // existing .env files, and the paths baked into older images,
         // working unchanged.
-        const fs::path data_dir = fs::path(util::env_or("DATA_DIR", "data"));
+        const fs::path data_dir = fs::path(util::fEnvOr("DATA_DIR", "data"));
 
-        const std::string database_url = util::env_or(
+        const std::string database_url = util::fEnvOr(
             "DATABASE_URL", "sqlite://" + (data_dir / "officesuite.db").generic_string());
         st.workspaces_dir = fs::path(
-            util::env_or("WORKSPACES_DIR", (data_dir / "workspaces").string()));
+            util::fEnvOr("WORKSPACES_DIR", (data_dir / "workspaces").string()));
         st.fonts_dir =
-            fs::path(util::env_or("FONTS_DIR", (data_dir / "fonts").string()));
+            fs::path(util::fEnvOr("FONTS_DIR", (data_dir / "fonts").string()));
         const auto port =
-            static_cast<uint16_t>(util::env_i64("PORT", 8080));
-        const fs::path web_root = fs::path(util::env_or("WEB_DIR", "web"));
+            static_cast<uint16_t>(util::fEnvI64("PORT", 8080));
+        const fs::path web_root = fs::path(util::fEnvOr("WEB_DIR", "web"));
         const fs::path migrations_dir =
-            fs::path(util::env_or("MIGRATIONS_DIR", "migrations"));
+            fs::path(util::fEnvOr("MIGRATIONS_DIR", "migrations"));
 
         std::error_code ec;
         fs::create_directories(st.workspaces_dir, ec);
         fs::create_directories(st.fonts_dir, ec);
 
         st.db = std::make_shared<Db>(database_url);
-        st.db->run_migrations(migrations_dir);
+        st.db->fRunMigrations(migrations_dir);
 
         // Session cookies are only marked Secure when COOKIE_SECURE=true; set
         // it once the server sits behind HTTPS (Secure cookies never arrive
         // over plain http://, which would break local development).
-        st.cookie_secure = util::env_bool("COOKIE_SECURE", false);
+        st.cookie_secure = util::fEnvBool("COOKIE_SECURE", false);
 
         // SESSION_SECRET signs the session cookie so a tampered or forged
         // cookie is rejected outright. Optional for local development
         // (unsigned cookies plus a warning), strongly recommended for any
         // real deployment.
-        st.session_secret = util::env_or("SESSION_SECRET", "");
+        st.session_secret = util::fEnvOr("SESSION_SECRET", "");
         if (st.session_secret.empty())
         {
             spdlog::warn(
@@ -142,9 +142,9 @@ int main()
         // Reverse-proxy peers whose X-Forwarded-For is trusted for rate-limit
         // bucketing, e.g. TRUSTED_PROXIES=127.0.0.1,::1
         for (const auto &entry :
-             util::split(util::env_or("TRUSTED_PROXIES", ""), ','))
+             util::fSplit(util::fEnvOr("TRUSTED_PROXIES", ""), ','))
         {
-            const std::string trimmed = util::trim(entry);
+            const std::string trimmed = util::fTrim(entry);
             if (!trimmed.empty())
             {
                 st.trusted_proxies.insert(trimmed);
@@ -153,27 +153,27 @@ int main()
 
         // Per-account workspace ceiling; registration is open, so without a
         // cap any account could fill the disk. 0 disables the check.
-        st.workspace_quota_bytes = static_cast<uint64_t>(util::env_i64(
+        st.workspace_quota_bytes = static_cast<uint64_t>(util::fEnvI64(
             "WORKSPACE_QUOTA_BYTES", 256LL * 1024 * 1024));
 
-        st.releases = Releases::from_env();
+        st.releases = Releases::fFromEnv();
 
-        auth::register_routes();
-        workspace::register_routes();
-        share::register_routes();
-        fonts::register_routes();
-        downloads::register_routes();
-        pdf_export::init();
-        pdf_export::register_routes();
+        auth::fRegisterRoutes();
+        workspace::fRegisterRoutes();
+        share::fRegisterRoutes();
+        fonts::fRegisterRoutes();
+        downloads::fRegisterRoutes();
+        pdf_export::fInit();
+        pdf_export::fRegisterRoutes();
 
-        install_static_cache_policy();
-        install_spa_fallback(web_root);
+        fInstallStaticCachePolicy();
+        fInstallSpaFallback(web_root);
 
         // Expired session rows would otherwise accumulate forever.
         drogon::app().getLoop()->runEvery(60 * 60.0, [] {
             try
             {
-                session::purge_expired();
+                session::fPurgeExpired();
             }
             catch (const std::exception &error)
             {
@@ -213,14 +213,14 @@ int main()
             // Every handler does blocking filesystem and SQLite work (see
             // db.h); the pool is what keeps one slow write from stalling
             // unrelated requests.
-            .setThreadNum(static_cast<size_t>(util::env_i64("THREADS", 8)))
+            .setThreadNum(static_cast<size_t>(util::fEnvI64("THREADS", 8)))
             // Drogon's limit is global, so it has to clear the largest of
             // the per-route ceilings the handlers enforce: PDF export bodies,
             // and MAX_WORK_FILE_BYTES for workspace writes (workspace.cpp;
             // fonts.cpp caps fonts at 5MB).
             .setClientMaxBodySize(static_cast<size_t>(std::max<int64_t>(
                 50LL * 1024 * 1024,
-                util::env_i64("MAX_WORK_FILE_BYTES", 32LL * 1024 * 1024) +
+                util::fEnvI64("MAX_WORK_FILE_BYTES", 32LL * 1024 * 1024) +
                     1024 * 1024)))
             .addListener("0.0.0.0", port);
 

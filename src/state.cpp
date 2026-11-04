@@ -4,7 +4,7 @@
 
 namespace lectern {
 
-bool RateLimiter::is_limited(const std::string &ip,
+bool RateLimiter::fIsLimited(const std::string &ip,
                              const std::string &kind,
                              uint32_t max,
                              std::chrono::seconds window)
@@ -22,7 +22,7 @@ bool RateLimiter::is_limited(const std::string &ip,
     return it->second.count >= max;
 }
 
-void RateLimiter::record(const std::string &ip,
+void RateLimiter::fRecord(const std::string &ip,
                          const std::string &kind,
                          std::chrono::seconds window)
 {
@@ -31,7 +31,7 @@ void RateLimiter::record(const std::string &ip,
     const auto now = Clock::now();
     for (auto it = buckets_.begin(); it != buckets_.end();)
     {
-        it = (now - it->second.start >= kMaxWindow) ? buckets_.erase(it)
+        it = (now - it->second.start >= cMaxWindow) ? buckets_.erase(it)
                                                     : std::next(it);
     }
 
@@ -44,7 +44,7 @@ void RateLimiter::record(const std::string &ip,
     ++bucket.count;
 }
 
-std::string AppState::client_ip(const drogon::HttpRequestPtr &req) const
+std::string AppState::fClientIp(const drogon::HttpRequestPtr &req) const
 {
     const std::string peer = req->peerAddr().toIp();
     if (trusted_proxies.find(peer) == trusted_proxies.end())
@@ -61,12 +61,12 @@ std::string AppState::client_ip(const drogon::HttpRequestPtr &req) const
     // Rightmost entry only: that's the one our own proxy appended. Everything
     // to its left is client-supplied and must stay untrusted.
     const size_t pos = forwarded.rfind(',');
-    const std::string last = util::trim(
+    const std::string last = util::fTrim(
         pos == std::string::npos ? forwarded : forwarded.substr(pos + 1));
     return last.empty() ? peer : last;
 }
 
-AppState &state()
+AppState &fState()
 {
     static AppState instance;
     return instance;

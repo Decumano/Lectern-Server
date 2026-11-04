@@ -9,6 +9,6 @@
 
 namespace lectern::share {
 
-void register_routes();
+void fRegisterRoutes();
 
 }  // namespace lectern::share

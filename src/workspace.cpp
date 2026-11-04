@@ -23,14 +23,14 @@ namespace {
 /// axum's 2MB default here, which a .mdn notebook — freehand ink, imported
 /// PDF pages, images — passes routinely, so the first sync of such a
 /// workspace failed with 413. WORKSPACE_QUOTA_BYTES still caps the account.
-size_t max_work_file_bytes()
+size_t fMaxWorkFileBytes()
 {
     static const size_t value = static_cast<size_t>(
-        util::env_i64("MAX_WORK_FILE_BYTES", 32LL * 1024 * 1024));
+        util::fEnvI64("MAX_WORK_FILE_BYTES", 32LL * 1024 * 1024));
     return value;
 }
 
-uint64_t modified_ms(const fs::path &path)
+uint64_t fModifiedMs(const fs::path &path)
 {
     std::error_code ec;
     const auto time = fs::last_write_time(path, ec);
@@ -55,7 +55,7 @@ uint64_t modified_ms(const fs::path &path)
 }
 
 template <size_t N>
-bool contains(const std::array<std::string_view, N> &haystack,
+bool fContains(const std::array<std::string_view, N> &haystack,
               std::string_view needle)
 {
     return std::find(haystack.begin(), haystack.end(), needle) !=
@@ -65,7 +65,7 @@ bool contains(const std::array<std::string_view, N> &haystack,
 /// Total bytes stored under a workspace root. Walks the tree rather than
 /// tracking a running total in the DB: workspaces are small (text files) and
 /// this way the number can't drift out of sync with what's on disk.
-uint64_t dir_size_bytes(const fs::path &dir)
+uint64_t fDirSizeBytes(const fs::path &dir)
 {
     std::error_code ec;
     uint64_t total = 0;
@@ -87,16 +87,16 @@ uint64_t dir_size_bytes(const fs::path &dir)
 
 // ── Deletion tombstones (see migrations/0007_deleted_files.sql) ──
 
-void record_tombstone(const std::string &user_id, const std::string &rel_path)
+void fRecordTombstone(const std::string &user_id, const std::string &rel_path)
 {
     try
     {
-        state().db->execute(
+        fState().db->fExecute(
             "INSERT INTO deleted_files (user_id, rel_path, deleted_at)"
             " VALUES (?, ?, ?)"
             " ON CONFLICT(user_id, rel_path)"
             " DO UPDATE SET deleted_at = excluded.deleted_at",
-            {DbValue(user_id), DbValue(rel_path), DbValue(util::now_ms())});
+            {DbValue(user_id), DbValue(rel_path), DbValue(util::fNowMs())});
     }
     catch (const std::exception &)
     {
@@ -105,11 +105,11 @@ void record_tombstone(const std::string &user_id, const std::string &rel_path)
     }
 }
 
-void clear_tombstone(const std::string &user_id, const std::string &rel_path)
+void fClearTombstone(const std::string &user_id, const std::string &rel_path)
 {
     try
     {
-        state().db->execute(
+        fState().db->fExecute(
             "DELETE FROM deleted_files WHERE user_id = ? AND rel_path = ?",
             {DbValue(user_id), DbValue(rel_path)});
     }
@@ -120,7 +120,7 @@ void clear_tombstone(const std::string &user_id, const std::string &rel_path)
 
 /// Every file (not directory) under `dir`, as rel keys prefixed with
 /// `rel_prefix` — used to tombstone the contents of a deleted/moved folder.
-void collect_files_under(const fs::path &dir,
+void fCollectFilesUnder(const fs::path &dir,
                          const std::string &rel_prefix,
                          std::vector<std::string> &out)
 {
@@ -138,7 +138,7 @@ void collect_files_under(const fs::path &dir,
         std::error_code kind_ec;
         if (entry.is_directory(kind_ec) && !kind_ec)
         {
-            collect_files_under(entry.path(), rel, out);
+            fCollectFilesUnder(entry.path(), rel, out);
         }
         else
         {
@@ -149,25 +149,25 @@ void collect_files_under(const fs::path &dir,
 
 }  // namespace
 
-std::string safe_rel_path(std::string_view rel_path)
+std::string fSafeRelPath(std::string_view rel_path)
 {
-    const auto invalid = [] {
-        return AppError::bad_request("invalid path");
+    const auto fInvalid = [] {
+        return AppError::fBadRequest("invalid path");
     };
 
     if (rel_path.empty())
     {
-        throw invalid();
+        throw fInvalid();
     }
     // A leading separator is an absolute path; Rust's Component::RootDir.
     if (rel_path.front() == '/' || rel_path.front() == '\\')
     {
-        throw invalid();
+        throw fInvalid();
     }
 
     std::vector<std::string> segments;
     std::string current;
-    const auto flush = [&] {
+    const auto fFlush = [&] {
         if (current.empty())
         {
             return;  // "a//b" collapses, same as Path::components()
@@ -179,14 +179,14 @@ std::string safe_rel_path(std::string_view rel_path)
         }
         if (current == "..")
         {
-            throw invalid();  // Component::ParentDir is refused outright
+            throw fInvalid();  // Component::ParentDir is refused outright
         }
         // A colon is either a Windows drive prefix ("C:") or an NTFS
         // alternate data stream ("file.mdp:evil"); neither belongs in a
         // workspace-relative path.
         if (current.find(':') != std::string::npos)
         {
-            throw invalid();
+            throw fInvalid();
         }
         segments.push_back(current);
         current.clear();
@@ -196,22 +196,22 @@ std::string safe_rel_path(std::string_view rel_path)
     {
         if (c == '/' || c == '\\')
         {
-            flush();
+            fFlush();
         }
         else if (c == '\0')
         {
-            throw invalid();
+            throw fInvalid();
         }
         else
         {
             current.push_back(c);
         }
     }
-    flush();
+    fFlush();
 
     if (segments.empty())
     {
-        throw invalid();
+        throw fInvalid();
     }
 
     std::string out = segments.front();
@@ -223,18 +223,18 @@ std::string safe_rel_path(std::string_view rel_path)
     return out;
 }
 
-bool is_work_file(std::string_view rel_path)
+bool fIsWorkFile(std::string_view rel_path)
 {
-    return contains(kWorkFileExtensions, util::extension_of(rel_path));
+    return fContains(cWorkFileExtensions, util::fExtensionOf(rel_path));
 }
 
-json walk_work_dir(const fs::path &dir, const std::string &rel_prefix)
+json fWalkWorkDir(const fs::path &dir, const std::string &rel_prefix)
 {
     std::error_code ec;
     fs::directory_iterator it(dir, ec);
     if (ec)
     {
-        throw AppError::not_found();
+        throw AppError::fNotFound();
     }
 
     struct Entry
@@ -268,7 +268,7 @@ json walk_work_dir(const fs::path &dir, const std::string &rel_prefix)
                                     {"modified", 0},
                                     {"hash", ""},
                                     {"children",
-                                     walk_work_dir(entry.path(), rel_path)}}});
+                                     fWalkWorkDir(entry.path(), rel_path)}}});
             continue;
         }
 
@@ -288,12 +288,12 @@ json walk_work_dir(const fs::path &dir, const std::string &rel_prefix)
              json{{"name", name},
                   {"relPath", rel_path},
                   {"isDir", false},
-                  {"modified", modified_ms(entry.path())},
+                  {"modified", fModifiedMs(entry.path())},
                   // sha256 hex digest of the file's bytes, empty for
                   // directories. Lets sync clients tell "did this change on
                   // the server" from one listing call without downloading
                   // every file's content.
-                  {"hash", util::sha256_file(entry.path())},
+                  {"hash", util::fSha256File(entry.path())},
                   {"children", json::array()}}});
     }
 
@@ -304,7 +304,7 @@ json walk_work_dir(const fs::path &dir, const std::string &rel_prefix)
                   {
                       return a.is_dir;  // directories first
                   }
-                  return util::to_lower(a.name) < util::to_lower(b.name);
+                  return util::fToLower(a.name) < util::fToLower(b.name);
               });
 
     json out = json::array();
@@ -315,22 +315,22 @@ json walk_work_dir(const fs::path &dir, const std::string &rel_prefix)
     return out;
 }
 
-json stat_file(const fs::path &path)
+json fStatFile(const fs::path &path)
 {
     std::error_code ec;
     if (!fs::is_regular_file(path, ec) || ec)
     {
-        throw AppError::not_found();
+        throw AppError::fNotFound();
     }
-    return json{{"modified", modified_ms(path)},
-                {"hash", util::sha256_file(path)}};
+    return json{{"modified", fModifiedMs(path)},
+                {"hash", util::fSha256File(path)}};
 }
 
-void check_quota(const fs::path &root,
+void fCheckQuota(const fs::path &root,
                  const fs::path &target,
                  uint64_t incoming_len)
 {
-    const uint64_t quota = state().workspace_quota_bytes;
+    const uint64_t quota = fState().workspace_quota_bytes;
     if (quota == 0)
     {
         return;
@@ -345,38 +345,38 @@ void check_quota(const fs::path &root,
     }
 
     const uint64_t projected =
-        dir_size_bytes(root) - existing_len + incoming_len;
+        fDirSizeBytes(root) - existing_len + incoming_len;
     if (projected > quota)
     {
-        throw AppError::bad_request(
+        throw AppError::fBadRequest(
             "workspace is full (" + std::to_string(quota / (1024 * 1024)) +
             " MB max) — delete something first");
     }
 }
 
-fs::path user_root(const drogon::HttpRequestPtr &req, std::string *user_id_out)
+fs::path fUserRoot(const drogon::HttpRequestPtr &req, std::string *user_id_out)
 {
-    const std::string user_id = auth::current_user_id_with_headers(req);
+    const std::string user_id = auth::fCurrentUserIdWithHeaders(req);
     if (user_id_out != nullptr)
     {
         *user_id_out = user_id;
     }
-    const fs::path root = state().workspaces_dir / user_id;
+    const fs::path root = fState().workspaces_dir / user_id;
     std::error_code ec;
     fs::create_directories(root, ec);
     return root;
 }
 
-void register_routes()
+void fRegisterRoutes()
 {
     auto &app = drogon::app();
 
     app.registerHandler(
         "/api/workspace",
         [](const drogon::HttpRequestPtr &req, HttpCallback &&callback) {
-            http::guard(std::move(callback), [&] {
-                return http::json_response(
-                    walk_work_dir(user_root(req), ""));
+            http::fGuard(std::move(callback), [&] {
+                return http::fJsonResponse(
+                    fWalkWorkDir(fUserRoot(req), ""));
             });
         },
         {drogon::Get});
@@ -384,11 +384,11 @@ void register_routes()
     app.registerHandler(
         "/api/workspace/stat",
         [](const drogon::HttpRequestPtr &req, HttpCallback &&callback) {
-            http::guard(std::move(callback), [&] {
-                const fs::path root = user_root(req);
+            http::fGuard(std::move(callback), [&] {
+                const fs::path root = fUserRoot(req);
                 const std::string rel =
-                    safe_rel_path(http::required_query(req, "path"));
-                return http::json_response(stat_file(root / rel));
+                    fSafeRelPath(http::fRequiredQuery(req, "path"));
+                return http::fJsonResponse(fStatFile(root / rel));
             });
         },
         {drogon::Get});
@@ -396,21 +396,21 @@ void register_routes()
     app.registerHandler(
         "/api/workspace/file",
         [](const drogon::HttpRequestPtr &req, HttpCallback &&callback) {
-            http::guard(std::move(callback), [&]() -> drogon::HttpResponsePtr {
+            http::fGuard(std::move(callback), [&]() -> drogon::HttpResponsePtr {
                 std::string user_id;
-                const fs::path root = user_root(req, &user_id);
+                const fs::path root = fUserRoot(req, &user_id);
                 const std::string rel =
-                    safe_rel_path(http::required_query(req, "path"));
+                    fSafeRelPath(http::fRequiredQuery(req, "path"));
                 const fs::path path = root / rel;
 
                 if (req->method() == drogon::Get)
                 {
-                    const auto content = util::read_file(path);
+                    const auto content = util::fReadFile(path);
                     if (!content)
                     {
-                        throw AppError::not_found();
+                        throw AppError::fNotFound();
                     }
-                    return http::text_response(*content);
+                    return http::fTextResponse(*content);
                 }
 
                 // A view, not a copy: Drogon already holds the whole
@@ -420,21 +420,21 @@ void register_routes()
                 const std::string_view content = req->getBody();
                 // Drogon's body limit is global and has to accommodate PDF
                 // export, so the per-file ceiling is enforced here.
-                if (content.size() > max_work_file_bytes())
+                if (content.size() > fMaxWorkFileBytes())
                 {
-                    throw AppError::bad_request(
+                    throw AppError::fBadRequest(
                         "file is too large (" +
-                        std::to_string(max_work_file_bytes() / (1024 * 1024)) +
+                        std::to_string(fMaxWorkFileBytes() / (1024 * 1024)) +
                         " MB max)");
                 }
-                check_quota(root, path, content.size());
-                util::write_file_atomic(path, content);
+                fCheckQuota(root, path, content.size());
+                util::fWriteFileAtomic(path, content);
 
                 // Writing a path makes it a live file again; a stale
                 // tombstone would tell sync clients to delete what the user
                 // just (re)created.
-                clear_tombstone(user_id, rel);
-                return http::ok_response();
+                fClearTombstone(user_id, rel);
+                return http::fOkResponse();
             });
         },
         {drogon::Get, drogon::Put});
@@ -442,17 +442,17 @@ void register_routes()
     app.registerHandler(
         "/api/workspace/folder",
         [](const drogon::HttpRequestPtr &req, HttpCallback &&callback) {
-            http::guard(std::move(callback), [&] {
-                const fs::path root = user_root(req);
-                const std::string rel = safe_rel_path(
-                    http::json_string(http::json_body(req), "relPath"));
+            http::fGuard(std::move(callback), [&] {
+                const fs::path root = fUserRoot(req);
+                const std::string rel = fSafeRelPath(
+                    http::fJsonString(http::fJsonBody(req), "relPath"));
                 std::error_code ec;
                 fs::create_directories(root / rel, ec);
                 if (ec)
                 {
-                    throw AppError::internal(ec.message());
+                    throw AppError::fInternal(ec.message());
                 }
-                return http::ok_response();
+                return http::fOkResponse();
             });
         },
         {drogon::Post});
@@ -460,37 +460,37 @@ void register_routes()
     app.registerHandler(
         "/api/workspace/entry",
         [](const drogon::HttpRequestPtr &req, HttpCallback &&callback) {
-            http::guard(std::move(callback), [&] {
+            http::fGuard(std::move(callback), [&] {
                 std::string user_id;
-                const fs::path root = user_root(req, &user_id);
+                const fs::path root = fUserRoot(req, &user_id);
                 const std::string rel =
-                    safe_rel_path(http::required_query(req, "path"));
+                    fSafeRelPath(http::fRequiredQuery(req, "path"));
                 const fs::path path = root / rel;
-                const bool is_dir = http::query_bool(req, "isDir");
+                const bool is_dir = http::fQueryBool(req, "isDir");
 
                 std::error_code ec;
                 if (is_dir)
                 {
                     std::vector<std::string> inside;
-                    collect_files_under(path, rel, inside);
+                    fCollectFilesUnder(path, rel, inside);
                     if (fs::remove_all(path, ec) == 0 || ec)
                     {
-                        throw AppError::not_found();
+                        throw AppError::fNotFound();
                     }
                     for (const auto &file_rel : inside)
                     {
-                        record_tombstone(user_id, file_rel);
+                        fRecordTombstone(user_id, file_rel);
                     }
                 }
                 else
                 {
                     if (!fs::remove(path, ec) || ec)
                     {
-                        throw AppError::not_found();
+                        throw AppError::fNotFound();
                     }
-                    record_tombstone(user_id, rel);
+                    fRecordTombstone(user_id, rel);
                 }
-                return http::ok_response();
+                return http::fOkResponse();
             });
         },
         {drogon::Delete});
@@ -498,14 +498,14 @@ void register_routes()
     app.registerHandler(
         "/api/workspace/move",
         [](const drogon::HttpRequestPtr &req, HttpCallback &&callback) {
-            http::guard(std::move(callback), [&] {
+            http::fGuard(std::move(callback), [&] {
                 std::string user_id;
-                const fs::path root = user_root(req, &user_id);
-                const auto body = http::json_body(req);
+                const fs::path root = fUserRoot(req, &user_id);
+                const auto body = http::fJsonBody(req);
                 const std::string from_key =
-                    safe_rel_path(http::json_string(body, "from"));
+                    fSafeRelPath(http::fJsonString(body, "from"));
                 const std::string to_key =
-                    safe_rel_path(http::json_string(body, "to"));
+                    fSafeRelPath(http::fJsonString(body, "to"));
                 const fs::path from = root / from_key;
                 const fs::path to = root / to_key;
 
@@ -517,7 +517,7 @@ void register_routes()
                 std::error_code ec;
                 if (fs::is_directory(from, ec) && !ec)
                 {
-                    collect_files_under(from, from_key, moved_files);
+                    fCollectFilesUnder(from, from_key, moved_files);
                 }
                 else
                 {
@@ -533,17 +533,17 @@ void register_routes()
                 fs::rename(from, to, ec);
                 if (ec)
                 {
-                    throw AppError::not_found();
+                    throw AppError::fNotFound();
                 }
 
                 for (const auto &file_rel : moved_files)
                 {
-                    record_tombstone(user_id, file_rel);
+                    fRecordTombstone(user_id, file_rel);
                     const std::string dest =
                         to_key + file_rel.substr(from_key.size());
-                    clear_tombstone(user_id, dest);
+                    fClearTombstone(user_id, dest);
                 }
-                return http::ok_response();
+                return http::fOkResponse();
             });
         },
         {drogon::Post});
@@ -554,10 +554,10 @@ void register_routes()
     app.registerHandler(
         "/api/workspace/deleted",
         [](const drogon::HttpRequestPtr &req, HttpCallback &&callback) {
-            http::guard(std::move(callback), [&] {
+            http::fGuard(std::move(callback), [&] {
                 std::string user_id;
-                user_root(req, &user_id);
-                const auto rows = state().db->query_all(
+                fUserRoot(req, &user_id);
+                const auto rows = fState().db->fQueryAll(
                     "SELECT rel_path, deleted_at FROM deleted_files"
                     " WHERE user_id = ?",
                     {DbValue(user_id)});
@@ -565,10 +565,10 @@ void register_routes()
                 json out = json::array();
                 for (const auto &row : rows)
                 {
-                    out.push_back({{"relPath", row.text(0)},
-                                   {"deletedAt", row.i64(1)}});
+                    out.push_back({{"relPath", row.fText(0)},
+                                   {"deletedAt", row.fI64(1)}});
                 }
-                return http::json_response(out);
+                return http::fJsonResponse(out);
             });
         },
         {drogon::Get});

@@ -16,17 +16,17 @@ namespace {
 
 /// DATABASE_URL in the Rust deployment is `sqlite://data/officesuite.db`;
 /// the C API wants a bare path.
-std::string path_from_url(const std::string &database_url)
+std::string fPathFromUrl(const std::string &database_url)
 {
-    static constexpr std::string_view kPrefix = "sqlite://";
-    if (util::starts_with(database_url, kPrefix))
+    static constexpr std::string_view cPrefix = "sqlite://";
+    if (util::fStartsWith(database_url, cPrefix))
     {
-        std::string rest = database_url.substr(kPrefix.size());
+        std::string rest = database_url.substr(cPrefix.size());
         // `sqlite://data/x.db` and `sqlite:///abs/x.db` both appear in the
         // wild; a third slash means an absolute path, so keep it.
         return rest;
     }
-    if (util::starts_with(database_url, "sqlite:"))
+    if (util::fStartsWith(database_url, "sqlite:"))
     {
         return database_url.substr(std::string_view("sqlite:").size());
     }
@@ -45,7 +45,7 @@ class Statement
                                           nullptr);
         if (rc != SQLITE_OK || stmt_ == nullptr)
         {
-            throw AppError::internal(std::string("sqlite prepare failed: ") +
+            throw AppError::fInternal(std::string("sqlite prepare failed: ") +
                                      sqlite3_errmsg(db));
         }
     }
@@ -61,7 +61,7 @@ class Statement
     Statement(const Statement &) = delete;
     Statement &operator=(const Statement &) = delete;
 
-    void bind(const DbParams &params)
+    void fBind(const DbParams &params)
     {
         int index = 1;
         for (const auto &param : params)
@@ -101,7 +101,7 @@ class Statement
         }
     }
 
-    sqlite3_stmt *get()
+    sqlite3_stmt *fGet()
     {
         return stmt_;
     }
@@ -110,7 +110,7 @@ class Statement
     sqlite3_stmt *stmt_ = nullptr;
 };
 
-Row row_from(sqlite3_stmt *stmt)
+Row fRowFrom(sqlite3_stmt *stmt)
 {
     const int count = sqlite3_column_count(stmt);
     std::vector<std::optional<std::string>> columns;
@@ -133,32 +133,32 @@ Row row_from(sqlite3_stmt *stmt)
 
 }  // namespace
 
-bool Row::is_null(size_t index) const
+bool Row::fIsNull(size_t index) const
 {
     return index >= columns_.size() || !columns_[index].has_value();
 }
 
-std::string Row::text(size_t index) const
+std::string Row::fText(size_t index) const
 {
-    if (is_null(index))
+    if (fIsNull(index))
     {
         return {};
     }
     return *columns_[index];
 }
 
-std::optional<std::string> Row::opt_text(size_t index) const
+std::optional<std::string> Row::fOptText(size_t index) const
 {
-    if (is_null(index))
+    if (fIsNull(index))
     {
         return std::nullopt;
     }
     return columns_[index];
 }
 
-int64_t Row::i64(size_t index) const
+int64_t Row::fI64(size_t index) const
 {
-    if (is_null(index))
+    if (fIsNull(index))
     {
         return 0;
     }
@@ -172,14 +172,14 @@ int64_t Row::i64(size_t index) const
     }
 }
 
-bool Row::boolean(size_t index) const
+bool Row::fBoolean(size_t index) const
 {
-    return i64(index) != 0;
+    return fI64(index) != 0;
 }
 
 Db::Db(const std::string &database_url)
 {
-    const std::string path = path_from_url(database_url);
+    const std::string path = fPathFromUrl(database_url);
 
     const fs::path parent = fs::path(path).parent_path();
     if (!parent.empty())
@@ -209,12 +209,12 @@ Db::Db(const std::string &database_url)
     std::lock_guard<std::mutex> lock(mutex_);
     // WAL keeps readers from blocking on the writer, which matters because
     // every request holds the connection mutex for the whole query.
-    exec_raw("PRAGMA journal_mode = WAL");
-    exec_raw("PRAGMA synchronous = NORMAL");
+    fExecRaw("PRAGMA journal_mode = WAL");
+    fExecRaw("PRAGMA synchronous = NORMAL");
     // The schema declares REFERENCES constraints; SQLite ignores them unless
     // this is on, and the Rust deployment relied on sqlx enabling it.
-    exec_raw("PRAGMA foreign_keys = ON");
-    exec_raw("PRAGMA busy_timeout = 5000");
+    fExecRaw("PRAGMA foreign_keys = ON");
+    fExecRaw("PRAGMA busy_timeout = 5000");
 }
 
 Db::~Db()
@@ -225,7 +225,7 @@ Db::~Db()
     }
 }
 
-void Db::exec_raw(const std::string &sql)
+void Db::fExecRaw(const std::string &sql)
 {
     char *error = nullptr;
     const int rc =
@@ -234,74 +234,74 @@ void Db::exec_raw(const std::string &sql)
     {
         const std::string message = error != nullptr ? error : "unknown error";
         sqlite3_free(error);
-        throw AppError::internal("sqlite: " + message);
+        throw AppError::fInternal("sqlite: " + message);
     }
 }
 
-int64_t Db::execute(std::string_view sql, const DbParams &params)
+int64_t Db::fExecute(std::string_view sql, const DbParams &params)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     Statement stmt(handle_, sql);
-    stmt.bind(params);
+    stmt.fBind(params);
 
-    const int rc = sqlite3_step(stmt.get());
+    const int rc = sqlite3_step(stmt.fGet());
     if (rc != SQLITE_DONE && rc != SQLITE_ROW)
     {
-        throw AppError::internal(std::string("sqlite step failed: ") +
+        throw AppError::fInternal(std::string("sqlite step failed: ") +
                                  sqlite3_errmsg(handle_));
     }
     return sqlite3_changes64(handle_);
 }
 
-std::optional<Row> Db::query_one(std::string_view sql, const DbParams &params)
+std::optional<Row> Db::fQueryOne(std::string_view sql, const DbParams &params)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     Statement stmt(handle_, sql);
-    stmt.bind(params);
+    stmt.fBind(params);
 
-    const int rc = sqlite3_step(stmt.get());
+    const int rc = sqlite3_step(stmt.fGet());
     if (rc == SQLITE_ROW)
     {
-        return row_from(stmt.get());
+        return fRowFrom(stmt.fGet());
     }
     if (rc == SQLITE_DONE)
     {
         return std::nullopt;
     }
-    throw AppError::internal(std::string("sqlite step failed: ") +
+    throw AppError::fInternal(std::string("sqlite step failed: ") +
                              sqlite3_errmsg(handle_));
 }
 
-std::vector<Row> Db::query_all(std::string_view sql, const DbParams &params)
+std::vector<Row> Db::fQueryAll(std::string_view sql, const DbParams &params)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     Statement stmt(handle_, sql);
-    stmt.bind(params);
+    stmt.fBind(params);
 
     std::vector<Row> rows;
     while (true)
     {
-        const int rc = sqlite3_step(stmt.get());
+        const int rc = sqlite3_step(stmt.fGet());
         if (rc == SQLITE_ROW)
         {
-            rows.push_back(row_from(stmt.get()));
+            rows.push_back(fRowFrom(stmt.fGet()));
             continue;
         }
         if (rc == SQLITE_DONE)
         {
             break;
         }
-        throw AppError::internal(std::string("sqlite step failed: ") +
+        throw AppError::fInternal(std::string("sqlite step failed: ") +
                                  sqlite3_errmsg(handle_));
     }
     return rows;
 }
 
-void Db::run_migrations(const fs::path &dir)
+void Db::fRunMigrations(const fs::path &dir)
 {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        exec_raw(
+        fExecRaw(
             "CREATE TABLE IF NOT EXISTS _migrations ("
             "  name TEXT PRIMARY KEY,"
             "  applied_at INTEGER NOT NULL"
@@ -330,14 +330,14 @@ void Db::run_migrations(const fs::path &dir)
         const std::string name = file.filename().string();
 
         const auto applied =
-            query_one("SELECT 1 FROM _migrations WHERE name = ?",
+            fQueryOne("SELECT 1 FROM _migrations WHERE name = ?",
                       {DbValue(name)});
         if (applied.has_value())
         {
             continue;
         }
 
-        const auto sql = util::read_file(file);
+        const auto sql = util::fReadFile(file);
         if (!sql)
         {
             throw std::runtime_error("cannot read migration " + name);
@@ -346,23 +346,23 @@ void Db::run_migrations(const fs::path &dir)
         spdlog::info("applying migration {}", name);
 
         std::lock_guard<std::mutex> lock(mutex_);
-        exec_raw("BEGIN");
+        fExecRaw("BEGIN");
         try
         {
             // Migration files hold several statements; sqlite3_exec runs the
             // whole script, which prepared statements cannot.
-            exec_raw(*sql);
+            fExecRaw(*sql);
             Statement stmt(
                 handle_,
                 "INSERT INTO _migrations (name, applied_at) VALUES (?, ?)");
-            stmt.bind({DbValue(name), DbValue(util::now_s())});
-            if (sqlite3_step(stmt.get()) != SQLITE_DONE)
+            stmt.fBind({DbValue(name), DbValue(util::fNowS())});
+            if (sqlite3_step(stmt.fGet()) != SQLITE_DONE)
             {
-                throw AppError::internal(
+                throw AppError::fInternal(
                     std::string("recording migration failed: ") +
                     sqlite3_errmsg(handle_));
             }
-            exec_raw("COMMIT");
+            fExecRaw("COMMIT");
         }
         catch (...)
         {

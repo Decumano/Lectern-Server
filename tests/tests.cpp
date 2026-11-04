@@ -16,34 +16,34 @@ struct CryptoFixture
 {
     CryptoFixture()
     {
-        util::init_crypto();
+        util::fInitCrypto();
     }
 };
 
 }  // namespace
 
-// ── auth::is_valid_email (ported from src/auth.rs) ──
+// ── auth::fIsValidEmail (ported from src/auth.rs) ──
 
 TEST_CASE("accepts normal emails", "[auth]")
 {
-    REQUIRE(auth::is_valid_email("marc@example.com"));
-    REQUIRE(auth::is_valid_email("a.b+tag@sub.domain.co.uk"));
+    REQUIRE(auth::fIsValidEmail("marc@example.com"));
+    REQUIRE(auth::fIsValidEmail("a.b+tag@sub.domain.co.uk"));
 }
 
 TEST_CASE("rejects malformed and hostile emails", "[auth]")
 {
-    REQUIRE_FALSE(auth::is_valid_email(""));
-    REQUIRE_FALSE(auth::is_valid_email("no-at-sign"));
-    REQUIRE_FALSE(auth::is_valid_email("two@@example.com"));
-    REQUIRE_FALSE(auth::is_valid_email("a@b@c.com"));
-    REQUIRE_FALSE(auth::is_valid_email("nodot@localhost"));
-    REQUIRE_FALSE(auth::is_valid_email("@example.com"));
-    REQUIRE_FALSE(auth::is_valid_email("x@.com"));
-    REQUIRE_FALSE(auth::is_valid_email("x@com."));
+    REQUIRE_FALSE(auth::fIsValidEmail(""));
+    REQUIRE_FALSE(auth::fIsValidEmail("no-at-sign"));
+    REQUIRE_FALSE(auth::fIsValidEmail("two@@example.com"));
+    REQUIRE_FALSE(auth::fIsValidEmail("a@b@c.com"));
+    REQUIRE_FALSE(auth::fIsValidEmail("nodot@localhost"));
+    REQUIRE_FALSE(auth::fIsValidEmail("@example.com"));
+    REQUIRE_FALSE(auth::fIsValidEmail("x@.com"));
+    REQUIRE_FALSE(auth::fIsValidEmail("x@com."));
     // markup / injection attempts must never enter the DB
     REQUIRE_FALSE(
-        auth::is_valid_email("x\"<img src=x onerror=alert(1)>@e.com"));
-    REQUIRE_FALSE(auth::is_valid_email("a b@example.com"));
+        auth::fIsValidEmail("x\"<img src=x onerror=alert(1)>@e.com"));
+    REQUIRE_FALSE(auth::fIsValidEmail("a b@example.com"));
 }
 
 // ── base64 (ported from src/fonts.rs) ──
@@ -52,13 +52,13 @@ TEST_CASE_METHOD(CryptoFixture,
                  "base64 matches the RFC 4648 vectors",
                  "[util]")
 {
-    REQUIRE(util::base64_encode(std::string_view("")) == "");
-    REQUIRE(util::base64_encode(std::string_view("f")) == "Zg==");
-    REQUIRE(util::base64_encode(std::string_view("fo")) == "Zm8=");
-    REQUIRE(util::base64_encode(std::string_view("foo")) == "Zm9v");
-    REQUIRE(util::base64_encode(std::string_view("foob")) == "Zm9vYg==");
-    REQUIRE(util::base64_encode(std::string_view("fooba")) == "Zm9vYmE=");
-    REQUIRE(util::base64_encode(std::string_view("foobar")) == "Zm9vYmFy");
+    REQUIRE(util::fBase64Encode(std::string_view("")) == "");
+    REQUIRE(util::fBase64Encode(std::string_view("f")) == "Zg==");
+    REQUIRE(util::fBase64Encode(std::string_view("fo")) == "Zm8=");
+    REQUIRE(util::fBase64Encode(std::string_view("foo")) == "Zm9v");
+    REQUIRE(util::fBase64Encode(std::string_view("foob")) == "Zm9vYg==");
+    REQUIRE(util::fBase64Encode(std::string_view("fooba")) == "Zm9vYmE=");
+    REQUIRE(util::fBase64Encode(std::string_view("foobar")) == "Zm9vYmFy");
 }
 
 TEST_CASE_METHOD(CryptoFixture,
@@ -73,8 +73,8 @@ TEST_CASE_METHOD(CryptoFixture,
         data.push_back(static_cast<char>(i));
     }
 
-    const std::string encoded = util::base64_encode(data);
-    const auto decoded = util::base64_decode(encoded);
+    const std::string encoded = util::fBase64Encode(data);
+    const auto decoded = util::fBase64Decode(encoded);
     REQUIRE(decoded.has_value());
     REQUIRE(*decoded == data);
 }
@@ -83,45 +83,45 @@ TEST_CASE_METHOD(CryptoFixture,
 
 TEST_CASE("safe_rel_path accepts ordinary relative paths", "[workspace]")
 {
-    REQUIRE(workspace::safe_rel_path("notes.mdp") == "notes.mdp");
-    REQUIRE(workspace::safe_rel_path("world/places/city.mdp") ==
+    REQUIRE(workspace::fSafeRelPath("notes.mdp") == "notes.mdp");
+    REQUIRE(workspace::fSafeRelPath("world/places/city.mdp") ==
             "world/places/city.mdp");
     // Backslashes normalise to the canonical forward-slash rel form.
-    REQUIRE(workspace::safe_rel_path("world\\city.mdp") == "world/city.mdp");
+    REQUIRE(workspace::fSafeRelPath("world\\city.mdp") == "world/city.mdp");
     // Redundant separators and "." components collapse, as Path::components
     // does in Rust.
-    REQUIRE(workspace::safe_rel_path("world//./city.mdp") ==
+    REQUIRE(workspace::fSafeRelPath("world//./city.mdp") ==
             "world/city.mdp");
 }
 
 TEST_CASE("safe_rel_path refuses anything that could escape the root",
           "[workspace]")
 {
-    REQUIRE_THROWS_AS(workspace::safe_rel_path(""), AppError);
-    REQUIRE_THROWS_AS(workspace::safe_rel_path("/etc/passwd"), AppError);
-    REQUIRE_THROWS_AS(workspace::safe_rel_path("\\windows\\system32"),
+    REQUIRE_THROWS_AS(workspace::fSafeRelPath(""), AppError);
+    REQUIRE_THROWS_AS(workspace::fSafeRelPath("/etc/passwd"), AppError);
+    REQUIRE_THROWS_AS(workspace::fSafeRelPath("\\windows\\system32"),
                       AppError);
-    REQUIRE_THROWS_AS(workspace::safe_rel_path("../secrets.mdp"), AppError);
-    REQUIRE_THROWS_AS(workspace::safe_rel_path("world/../../secrets.mdp"),
+    REQUIRE_THROWS_AS(workspace::fSafeRelPath("../secrets.mdp"), AppError);
+    REQUIRE_THROWS_AS(workspace::fSafeRelPath("world/../../secrets.mdp"),
                       AppError);
-    REQUIRE_THROWS_AS(workspace::safe_rel_path("C:/Windows/win.ini"),
+    REQUIRE_THROWS_AS(workspace::fSafeRelPath("C:/Windows/win.ini"),
                       AppError);
     // NTFS alternate data stream.
-    REQUIRE_THROWS_AS(workspace::safe_rel_path("notes.mdp:hidden"), AppError);
-    REQUIRE_THROWS_AS(workspace::safe_rel_path("."), AppError);
+    REQUIRE_THROWS_AS(workspace::fSafeRelPath("notes.mdp:hidden"), AppError);
+    REQUIRE_THROWS_AS(workspace::fSafeRelPath("."), AppError);
 }
 
 TEST_CASE("is_work_file recognises exactly the nine app extensions",
           "[workspace]")
 {
-    for (const auto ext : workspace::kWorkFileExtensions)
+    for (const auto ext : workspace::cWorkFileExtensions)
     {
-        REQUIRE(workspace::is_work_file("doc." + std::string(ext)));
+        REQUIRE(workspace::fIsWorkFile("doc." + std::string(ext)));
     }
-    REQUIRE(workspace::is_work_file("DOC.MDP"));  // case-insensitive
-    REQUIRE_FALSE(workspace::is_work_file("notes.txt"));
-    REQUIRE_FALSE(workspace::is_work_file("_lktpl.json"));
-    REQUIRE_FALSE(workspace::is_work_file("noextension"));
+    REQUIRE(workspace::fIsWorkFile("DOC.MDP"));  // case-insensitive
+    REQUIRE_FALSE(workspace::fIsWorkFile("notes.txt"));
+    REQUIRE_FALSE(workspace::fIsWorkFile("_lktpl.json"));
+    REQUIRE_FALSE(workspace::fIsWorkFile("noextension"));
 }
 
 // ── Password hashing ──
@@ -129,10 +129,10 @@ TEST_CASE("is_work_file recognises exactly the nine app extensions",
 TEST_CASE_METHOD(CryptoFixture, "passwords verify against their hash",
                  "[util]")
 {
-    const std::string hash = util::hash_password("correct horse battery");
-    REQUIRE(util::verify_password("correct horse battery", hash));
-    REQUIRE_FALSE(util::verify_password("wrong horse battery", hash));
-    REQUIRE_FALSE(util::verify_password("", hash));
+    const std::string hash = util::fHashPassword("correct horse battery");
+    REQUIRE(util::fVerifyPassword("correct horse battery", hash));
+    REQUIRE_FALSE(util::fVerifyPassword("wrong horse battery", hash));
+    REQUIRE_FALSE(util::fVerifyPassword("", hash));
 }
 
 TEST_CASE_METHOD(CryptoFixture,
@@ -150,25 +150,25 @@ TEST_CASE_METHOD(CryptoFixture,
 
     // The digest above is a placeholder, so verification must fail rather
     // than crash — what matters is that libsodium accepts the *format*.
-    REQUIRE_NOTHROW(util::verify_password("hunter2", rust_hash));
+    REQUIRE_NOTHROW(util::fVerifyPassword("hunter2", rust_hash));
 }
 
 // ── Small string helpers the handlers lean on ──
 
 TEST_CASE("extension_of matches Rust's Path::extension semantics", "[util]")
 {
-    REQUIRE(util::extension_of("city.mdp") == "mdp");
-    REQUIRE(util::extension_of("City.MDP") == "mdp");
-    REQUIRE(util::extension_of("archive.tar.gz") == "gz");
-    REQUIRE(util::extension_of("noextension").empty());
+    REQUIRE(util::fExtensionOf("city.mdp") == "mdp");
+    REQUIRE(util::fExtensionOf("City.MDP") == "mdp");
+    REQUIRE(util::fExtensionOf("archive.tar.gz") == "gz");
+    REQUIRE(util::fExtensionOf("noextension").empty());
     // A leading dot is a hidden file, not an extension.
-    REQUIRE(util::extension_of(".mdp").empty());
-    REQUIRE(util::extension_of("dir.d/file").empty());
+    REQUIRE(util::fExtensionOf(".mdp").empty());
+    REQUIRE(util::fExtensionOf("dir.d/file").empty());
 }
 
 TEST_CASE("basename_of takes the last path segment", "[util]")
 {
-    REQUIRE(util::basename_of("world/places/city.mdp") == "city.mdp");
-    REQUIRE(util::basename_of("city.mdp") == "city.mdp");
-    REQUIRE(util::basename_of("").empty());
+    REQUIRE(util::fBasenameOf("world/places/city.mdp") == "city.mdp");
+    REQUIRE(util::fBasenameOf("city.mdp") == "city.mdp");
+    REQUIRE(util::fBasenameOf("").empty());
 }

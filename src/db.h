@@ -40,21 +40,21 @@ class Row
     {
     }
 
-    bool is_null(size_t index) const;
+    bool fIsNull(size_t index) const;
 
     /// Column as text; empty string when NULL or out of range.
-    std::string text(size_t index) const;
+    std::string fText(size_t index) const;
 
     /// Column as text, or nullopt when SQL NULL — for the genuinely nullable
     /// columns (comments.author_id, comments.anchor).
-    std::optional<std::string> opt_text(size_t index) const;
+    std::optional<std::string> fOptText(size_t index) const;
 
-    int64_t i64(size_t index) const;
+    int64_t fI64(size_t index) const;
 
     /// SQLite has no boolean type; the schema stores 0/1 integers.
-    bool boolean(size_t index) const;
+    bool fBoolean(size_t index) const;
 
-    size_t size() const
+    size_t fSize() const
     {
         return columns_.size();
     }
@@ -76,25 +76,25 @@ class Db
     Db &operator=(const Db &) = delete;
 
     /// Runs a statement, returning the number of rows it changed.
-    int64_t execute(std::string_view sql, const DbParams &params = {});
+    int64_t fExecute(std::string_view sql, const DbParams &params = {});
 
-    std::optional<Row> query_one(std::string_view sql,
+    std::optional<Row> fQueryOne(std::string_view sql,
                                  const DbParams &params = {});
 
-    std::vector<Row> query_all(std::string_view sql,
+    std::vector<Row> fQueryAll(std::string_view sql,
                                const DbParams &params = {});
 
     /// Applies every `*.sql` file in `dir` that this database has not seen
     /// yet, in filename order, each inside its own transaction. Replaces
     /// sqlx's compile-time `migrate!` macro; the ledger table is `_migrations`.
-    void run_migrations(const std::filesystem::path &dir);
+    void fRunMigrations(const std::filesystem::path &dir);
 
   private:
     sqlite3 *handle_ = nullptr;
     std::mutex mutex_;
 
     /// Caller must hold `mutex_`.
-    void exec_raw(const std::string &sql);
+    void fExecRaw(const std::string &sql);
 };
 
 }  // namespace lectern

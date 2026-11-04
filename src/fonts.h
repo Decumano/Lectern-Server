@@ -19,15 +19,15 @@
 
 namespace lectern::fonts {
 
-constexpr size_t kMaxFontBytes = 5 * 1024 * 1024;  // 5MB per font file
+constexpr size_t cMaxFontBytes = 5 * 1024 * 1024;  // 5MB per font file
 
 /// Builds a `<style>` block declaring every one of the user's custom fonts as
 /// `@font-face` with the file base64-embedded as a `data:` URI. Used by
 /// export.cpp, whose headless-Chromium sandbox refuses any request that isn't
 /// `file://` or `data:` — an HTTP `url()` back to this server would simply be
 /// dropped, so the bytes have to already be inline before Chromium sees them.
-std::string embed_account_fonts_style(const std::string &owner_id);
+std::string fEmbedAccountFontsStyle(const std::string &owner_id);
 
-void register_routes();
+void fRegisterRoutes();
 
 }  // namespace lectern::fonts

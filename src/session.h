@@ -23,25 +23,25 @@ namespace lectern::session {
 
 /// Cookie name. Deliberately distinct from drogon's own JSESSIONID so the
 /// framework's session machinery, if it is ever enabled, cannot collide.
-inline constexpr const char *kCookieName = "lectern_session";
+inline constexpr const char *cCookieName = "lectern_session";
 
 /// Sessions expire this long after they were last used.
-inline constexpr int kInactivityDays = 30;
+inline constexpr int cInactivityDays = 30;
 
 /// The user id of the caller's valid session, or nullopt. Sliding expiry:
 /// a successful read pushes the session's expiry back out to the full
 /// inactivity window.
-std::optional<std::string> current_user_id(const drogon::HttpRequestPtr &req);
+std::optional<std::string> fCurrentUserId(const drogon::HttpRequestPtr &req);
 
 /// Creates a session for `user_id` and returns the cookie that carries it.
 /// The caller attaches it to the response.
-drogon::Cookie start(const std::string &user_id);
+drogon::Cookie fStart(const std::string &user_id);
 
 /// Deletes the caller's session row and returns an already-expired cookie
 /// that clears it from the browser.
-drogon::Cookie destroy(const drogon::HttpRequestPtr &req);
+drogon::Cookie fDestroy(const drogon::HttpRequestPtr &req);
 
 /// Drops rows whose expiry has passed. Called periodically from main().
-void purge_expired();
+void fPurgeExpired();
 
 }  // namespace lectern::session
