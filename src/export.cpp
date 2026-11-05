@@ -352,7 +352,23 @@ class CdpSession
         connection->send(payload);
     }
 
+    /// Runs on the WebSocket thread, where an exception nobody catches ends the
+    /// whole server process, so a message this can't make sense of is dropped
+    /// and the waiting render times out with an ordinary error instead.
     void fOnMessage(const std::string &message)
+    {
+        try
+        {
+            fHandleMessage(message);
+        }
+        catch (const std::exception &error)
+        {
+            spdlog::warn("PDF export ignored an unreadable renderer message: {}",
+                         error.what());
+        }
+    }
+
+    void fHandleMessage(const std::string &message)
     {
         auto parsed = json::parse(message, nullptr, false);
         if (parsed.is_discarded() || !parsed.is_object())
@@ -362,8 +378,16 @@ class CdpSession
 
         if (parsed.contains("id") && parsed["id"].is_number_integer())
         {
+            // The id has to be read before `parsed` is moved from. In
+            // `responses_[parsed["id"].get<int>()] = std::move(parsed)` the
+            // right-hand side is evaluated first, and json's operator= takes
+            // its argument by value, so `parsed` was already empty when the
+            // key was computed: "type must be number, but is null", thrown on
+            // this thread, which terminated the server on the first reply of
+            // every PDF export.
+            const int id = parsed["id"].get<int>();
             std::lock_guard<std::mutex> lock(mutex_);
-            responses_[parsed["id"].get<int>()] = std::move(parsed);
+            responses_[id] = std::move(parsed);
             condition_.notify_all();
             return;
         }
