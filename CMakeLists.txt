@@ -30,6 +30,8 @@ add_library(lectern_core STATIC
   src/auth.cpp
   src/workspace.cpp
   src/share.cpp
+  src/sync_hub.cpp
+  src/sync_ws.cpp
   src/fonts.cpp
   src/export.cpp
   src/downloads.cpp
@@ -53,7 +55,7 @@ target_link_libraries(lectern-server PRIVATE lectern_core)
 include(CTest)
 if(BUILD_TESTING)
   find_package(Catch2 3 CONFIG REQUIRED)
-  add_executable(lectern-tests tests/tests.cpp)
+  add_executable(lectern-tests tests/tests.cpp tests/sync_tests.cpp)
   target_link_libraries(lectern-tests PRIVATE lectern_core Catch2::Catch2WithMain)
   add_test(NAME lectern-tests COMMAND lectern-tests)
 endif()

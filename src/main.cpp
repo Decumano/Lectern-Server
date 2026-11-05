@@ -13,6 +13,7 @@
 #include "session.h"
 #include "share.h"
 #include "state.h"
+#include "sync_ws.h"
 #include "util.h"
 #include "workspace.h"
 
@@ -160,6 +161,7 @@ int main()
 
         auth::fRegisterRoutes();
         workspace::fRegisterRoutes();
+        sync::fRegisterRoutes();
         share::fRegisterRoutes();
         fonts::fRegisterRoutes();
         downloads::fRegisterRoutes();
