@@ -10,6 +10,7 @@
 #include "error.h"
 #include "http.h"
 #include "state.h"
+#include "sync_ws.h"
 #include "util.h"
 
 namespace fs = std::filesystem;
@@ -434,6 +435,7 @@ void fRegisterRoutes()
                 // tombstone would tell sync clients to delete what the user
                 // just (re)created.
                 fClearTombstone(user_id, rel);
+                sync::fNotifyChanges(user_id, {rel}, req->getHeader("x-lectern-device"));
                 return http::fOkResponse();
             });
         },
@@ -443,7 +445,8 @@ void fRegisterRoutes()
         "/api/workspace/folder",
         [](const drogon::HttpRequestPtr &req, HttpCallback &&callback) {
             http::fGuard(std::move(callback), [&] {
-                const fs::path root = fUserRoot(req);
+                std::string user_id;
+                const fs::path root = fUserRoot(req, &user_id);
                 const std::string rel = fSafeRelPath(
                     http::fJsonString(http::fJsonBody(req), "relPath"));
                 std::error_code ec;
@@ -452,6 +455,8 @@ void fRegisterRoutes()
                 {
                     throw AppError::fInternal(ec.message());
                 }
+                // A folder is not a file: tell the owner's devices to look at everything.
+                sync::fNotifyChanges(user_id, {}, req->getHeader("x-lectern-device"));
                 return http::fOkResponse();
             });
         },
@@ -490,6 +495,9 @@ void fRegisterRoutes()
                     }
                     fRecordTombstone(user_id, rel);
                 }
+                sync::fNotifyChanges(user_id,
+                                     is_dir ? std::vector<std::string>{} : std::vector<std::string>{rel},
+                                     req->getHeader("x-lectern-device"));
                 return http::fOkResponse();
             });
         },
@@ -515,8 +523,10 @@ void fRegisterRoutes()
                 // not kill the file that now lives there.
                 std::vector<std::string> moved_files;
                 std::error_code ec;
+                bool was_dir = false;
                 if (fs::is_directory(from, ec) && !ec)
                 {
+                    was_dir = true;
                     fCollectFilesUnder(from, from_key, moved_files);
                 }
                 else
@@ -543,6 +553,10 @@ void fRegisterRoutes()
                         to_key + file_rel.substr(from_key.size());
                     fClearTombstone(user_id, dest);
                 }
+                sync::fNotifyChanges(user_id,
+                                     was_dir ? std::vector<std::string>{}
+                                             : std::vector<std::string>{from_key, to_key},
+                                     req->getHeader("x-lectern-device"));
                 return http::fOkResponse();
             });
         },

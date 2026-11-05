@@ -12,6 +12,7 @@
 #include "error.h"
 #include "http.h"
 #include "state.h"
+#include "sync_ws.h"
 #include "util.h"
 #include "workspace.h"
 
@@ -219,7 +220,8 @@ std::string fReadThrough(const Access &access)
 /// keeps an edit share from being used to fill someone's disk. Writes land in
 /// the owner's workspace, so they count against the owner's quota — otherwise
 /// an edit share is a way around it.
-void fWriteThrough(const Access &access, const std::string &content)
+void fWriteThrough(const Access &access, const std::string &content,
+                   const std::string &origin_device)
 {
     if (access.permission < Perm::Edit)
     {
@@ -240,6 +242,9 @@ void fWriteThrough(const Access &access, const std::string &content)
     const fs::path owner_root = fState().workspaces_dir / access.owner_id;
     workspace::fCheckQuota(owner_root, full, content.size());
     util::fWriteFileAtomic(full, content);
+
+    // The owner's devices (and anyone else following the file) hear about it.
+    sync::fNotifyChanges(access.owner_id, {access.rel_path}, origin_device);
 }
 
 /// Confirms the entry the owner is about to share actually exists.
@@ -325,6 +330,41 @@ std::pair<std::string, std::string> fResolveCommentTarget(
 }
 
 }  // namespace
+
+std::optional<std::pair<std::string, std::string>> fResolveWatch(
+    const std::string &user_id, const nlohmann::json &request)
+{
+    try
+    {
+        const auto text = [&](const char *key) {
+            const auto it = request.find(key);
+            return (it != request.end() && it->is_string()) ? it->get<std::string>()
+                                                              : std::string{};
+        };
+        const std::string sub_path = text("path");
+        const std::string link = text("link");
+        const std::string share_id = text("share");
+
+        Access access;
+        if (!link.empty())
+        {
+            access = fResolveLinkAccess(link, sub_path);
+        }
+        else if (!share_id.empty() && !user_id.empty())
+        {
+            access = fResolveShareAccess(user_id, share_id, sub_path);
+        }
+        else
+        {
+            return std::nullopt;
+        }
+        return std::pair<std::string, std::string>{access.owner_id, access.rel_path};
+    }
+    catch (const std::exception &)
+    {
+        return std::nullopt;
+    }
+}
 
 void fRegisterRoutes()
 {
@@ -610,7 +650,8 @@ void fRegisterRoutes()
                 {
                     return http::fTextResponse(fReadThrough(access));
                 }
-                fWriteThrough(access, std::string(req->getBody()));
+                fWriteThrough(access, std::string(req->getBody()),
+                              req->getHeader("x-lectern-device"));
                 return http::fOkResponse();
             });
         },
@@ -715,7 +756,8 @@ void fRegisterRoutes()
                 {
                     return http::fTextResponse(fReadThrough(access));
                 }
-                fWriteThrough(access, std::string(req->getBody()));
+                fWriteThrough(access, std::string(req->getBody()),
+                              req->getHeader("x-lectern-device"));
                 return http::fOkResponse();
             });
         },

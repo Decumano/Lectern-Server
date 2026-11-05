@@ -77,6 +77,40 @@ WEB_DIR=../Lectern-Server/web ./build/Release/lectern-server
 Docker works the same way as the Rust build — `docker compose up -d --build`,
 with `SESSION_SECRET` set in `.env`.
 
+## Live sync (`/api/sync/ws`)
+
+Clients no longer poll. Each keeps one WebSocket to `/api/sync/ws` and the server
+announces changes over it; file contents still move over the ordinary HTTP
+endpoints, where quotas, tombstones and the clients' three-way merge already
+live. The socket only says *that* something changed and carries the
+acknowledgements that prove the other end is alive. Frames are JSON, each with a
+sender-chosen `id`:
+
+| Frame | Direction | Meaning |
+|---|---|---|
+| `hello {device}` | client → server | Greeting; the server `ack`s it. A client does nothing until this is answered. |
+| `request_changes` | server → client | Sent on **every new connection**. After the server restarts or is updated, every client reconnects and is asked for what it holds. |
+| `changes {paths}` | both ways | A workspace changed (an empty `paths` means a folder changed, or too many files to list: look at everything). The server sends it after any write, delete, move or folder create (from any client, or through a share), skipping the writer's own device (`X-Lectern-Device` header). A client sends it when the user saves. |
+| `watch` / `unwatch {share\|link, path}` | client → server | Follow one shared file (grantees, and link viewers with no account). |
+| `ping` | client → server | Heartbeat. |
+| `ack {id}` | both ways | Answers the frame `id`. |
+
+Nothing is acted on without an answer. A frame the server sends that is not
+acknowledged within 10 s drops that connection (the client's reconnect then
+catches up on whatever it missed); on the client side an unanswered greeting,
+save announcement or heartbeat does the same, and a client pushes nothing while
+the server isn't answering, so a server that is down or restarting is noticed
+rather than written at. Nothing is persisted: a restart is covered by
+`request_changes`.
+
+Credentials are the session cookie (browsers; the `Origin` must be this server)
+or `Authorization: Bearer <api token>` (desktop). Credentials that are present but
+wrong are refused; none at all is an anonymous link viewer, who can only `watch`
+through the link's token.
+
+The protocol logic is `src/sync_hub.cpp`, free of Drogon and unit-tested in
+`tests/sync_tests.cpp`; `src/sync_ws.cpp` is the thin glue.
+
 ## Tests
 
 ```bash
