@@ -67,6 +67,11 @@ bool fOriginAllowed(const drogon::HttpRequestPtr &req)
 class SyncSocket : public drogon::WebSocketController<SyncSocket, false>
 {
   public:
+    // Drogon's template calls this when the class is built, even for a
+    // controller that isn't auto-registered. There is nothing to declare: the
+    // route is registered by name in fRegisterRoutes.
+    static void initPathRouting() {}
+
     void handleNewConnection(const drogon::HttpRequestPtr &req,
                              const drogon::WebSocketConnectionPtr &connection) override
     {
@@ -122,7 +127,13 @@ class SyncSocket : public drogon::WebSocketController<SyncSocket, false>
 
 void fRegisterRoutes()
 {
-    drogon::app().registerWebSocketController("/api/sync/ws", "lectern::sync::SyncSocket",
+    // By the class's own name, not a hand-written one: Drogon finds a controller
+    // by the name it registered the class under, and for a class that nothing
+    // constructs, in an anonymous namespace, that name is not
+    // "lectern::sync::SyncSocket". Asking the class for it also references the
+    // static that registers it, so the route can't come up empty ("Websocket
+    // controller class not found") the way a string literal let it.
+    drogon::app().registerWebSocketController("/api/sync/ws", SyncSocket::classTypeName(),
                                               {drogon::Get});
 }
 
