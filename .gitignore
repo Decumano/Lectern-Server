@@ -15,5 +15,5 @@ build-*/
 .env
 
 # Editor and tooling.
-/.claude/*
+/.claude/
 /.vscode/*
